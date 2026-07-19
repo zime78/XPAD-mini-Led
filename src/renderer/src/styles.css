@@ -1,0 +1,189 @@
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+body {
+  margin: 0;
+}
+
+main {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+h1 {
+  font-size: 22px;
+}
+
+section {
+  margin-bottom: 28px;
+}
+
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0;
+  flex-wrap: wrap;
+}
+
+.state-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.sep {
+  width: 1px;
+  height: 16px;
+  background: color-mix(in srgb, currentColor 25%, transparent);
+}
+
+.ok {
+  color: #16a34a;
+}
+
+.warn {
+  color: #d97706;
+}
+
+.bad {
+  color: #dc2626;
+}
+
+.button-row {
+  display: flex;
+  gap: 8px;
+}
+
+button {
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+button:hover {
+  background: color-mix(in srgb, currentColor 10%, transparent);
+}
+
+.hint {
+  opacity: 0.7;
+  font-size: 13px;
+  margin: 4px 0 8px;
+}
+
+.sessions {
+  font-size: 13px;
+}
+
+.message {
+  padding: 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, #16a34a 15%, transparent);
+}
+
+.key-card,
+.state-card {
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin-bottom: 10px;
+}
+
+.key-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.key-card-body {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.state-card {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.state-name {
+  width: 90px;
+  font-weight: 600;
+}
+
+label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+label.inline {
+  display: flex;
+  margin: 8px 0;
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+  padding: 5px 8px;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+  background: transparent;
+  color: inherit;
+}
+
+input.short {
+  width: 80px;
+}
+
+input[type='color'] {
+  padding: 0;
+  width: 42px;
+  height: 28px;
+}
+
+textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+}
+
+.save-bar {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 12px 0;
+  background: color-mix(in srgb, Canvas 92%, transparent);
+  backdrop-filter: blur(4px);
+}
+
+button.primary {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.message-inline {
+  font-size: 13px;
+  color: #16a34a;
+}

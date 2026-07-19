@@ -1,0 +1,25 @@
+appId: io.github.spinnermaster.xpad-mini-claude-code
+productName: XPAD Mini Claude
+# node-hid and koffi ship prebuilt N-API binaries; no toolchain rebuild needed.
+npmRebuild: false
+directories:
+  output: dist
+files:
+  - out/**
+extraResources:
+  - from: assets
+    to: assets
+win:
+  target:
+    - nsis
+  icon: build/icon.png
+nsis:
+  oneClick: true
+  perMachine: false
+mac:
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+  category: public.app-category.developer-tools
+  # Unsigned build: open with right-click -> Open the first time (Gatekeeper).
+  identity: null

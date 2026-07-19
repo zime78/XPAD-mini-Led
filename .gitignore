@@ -1,0 +1,11 @@
+node_modules/
+out/
+dist/
+*.log
+.DS_Store
+*.tsbuildinfo
+re/
+# All-Rights-Reserved fan art, imported locally by tools/import-clawd-gifs.js
+assets/clawd-external/
+# Pulsar's copyrighted manual: keep local, do not redistribute
+Manual_XPad_mini.pdf
