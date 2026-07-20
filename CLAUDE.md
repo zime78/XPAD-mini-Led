@@ -20,6 +20,8 @@ npm run dist             # build + electron-builder installer
 
 There are no tests and no linter. CI (`.github/workflows/build.yml`) runs gen-icons, gen-clawd, typecheck, build, and electron-builder on Windows and macOS.
 
+**`npm run dev` only hot-reloads the renderer** — edits under `src/main/` (including the device worker) require killing and relaunching the dev process, or you will be testing stale code.
+
 `node tools/import-clawd-gifs.js` optionally imports pixel-art Clawd animations into `assets/clawd-external/` — that artwork is All-Rights-Reserved fan art, gitignored, and must **never** be committed or redistributed.
 
 ## Architecture
