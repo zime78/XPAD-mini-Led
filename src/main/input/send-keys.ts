@@ -49,6 +49,40 @@ function normalizeKey(key: string): string {
   return aliases[key] ?? key;
 }
 
+// --- USB HID usage codes (for on-device key mapping) -------------------------
+
+const HID_USAGE: Record<string, number> = {
+  enter: 0x28,
+  escape: 0x29,
+  backspace: 0x2a,
+  tab: 0x2b,
+  space: 0x2c,
+  delete: 0x4c,
+  up: 0x52,
+  down: 0x51,
+  left: 0x50,
+  right: 0x4f,
+  home: 0x4a,
+  end: 0x4d,
+  pageup: 0x4b,
+  pagedown: 0x4e,
+};
+for (let c = 0; c < 26; c++) HID_USAGE[String.fromCharCode(97 + c)] = 0x04 + c;
+for (let d = 1; d <= 9; d++) HID_USAGE[String(d)] = 0x1e + d - 1;
+HID_USAGE['0'] = 0x27;
+for (let i = 1; i <= 12; i++) HID_USAGE[`f${i}`] = 0x3a + i - 1;
+for (let i = 13; i <= 24; i++) HID_USAGE[`f${i}`] = 0x68 + i - 13;
+
+/**
+ * USB HID usage for a chord the pad can type by itself (single key, no
+ * modifiers), or null if the chord needs the app's synthesizer.
+ */
+export function chordToHidUsage(chord: string): number | null {
+  const parsed = parseChord(chord);
+  if (!parsed || parsed.ctrl || parsed.alt || parsed.shift || parsed.meta) return null;
+  return HID_USAGE[parsed.key] ?? null;
+}
+
 // --- Windows: SendInput ------------------------------------------------------
 
 const WIN_VK: Record<string, number> = {

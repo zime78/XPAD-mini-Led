@@ -32,6 +32,8 @@ export interface AppConfig {
   doneDecaySeconds: number;
   /** Global LED brightness, 0.1-1, applied before gamma */
   ledBrightness: number;
+  /** Map the pad's keys to F13/F14/F15 automatically while connected (RAM-only) */
+  padAutoRemap: boolean;
   /** Only synthesize keystrokes when the focused process matches one of these (lowercase substrings) */
   processAllowlist: string[];
   guardEnabled: boolean;
@@ -74,7 +76,11 @@ export interface StatusSnapshot {
 
 export const DEFAULT_CONFIG: AppConfig = {
   port: 3939,
-  hotkeys: { left: 'F13', center: 'F14', right: 'F15' },
+  // Single-key actions are mapped ONTO the pad (it types y/n/F13 itself —
+  // the hotkey round-trip through the app clumps under load). `hotkeys` are
+  // the fallback keys the pad emits for actions the app must intercept
+  // (shell commands, modified chords).
+  hotkeys: { left: 'F14', center: 'F13', right: 'F15' },
   keys: {
     left: { type: 'approve', keys: 'y' },
     center: { type: 'hotkey', keys: 'F13' },
@@ -90,6 +96,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   },
   doneDecaySeconds: 45,
   ledBrightness: 1,
+  padAutoRemap: true,
   processAllowlist: [
     // windows
     'windowsterminal',

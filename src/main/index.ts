@@ -7,6 +7,7 @@ import {
   StatusSnapshot,
 } from '../shared/types';
 import { loadConfig, saveConfig } from './config';
+import { chordToHidUsage } from './input/send-keys';
 import { HookServer } from './claude/hook-server';
 import {
   areHooksInstalled,
@@ -25,6 +26,35 @@ let stateMachine: ClaudeStateMachine;
 let hookServer: HookServer;
 let deviceHost: DeviceHost;
 let hotkeys: HotkeyManager;
+
+const KEY_IDS = ['left', 'center', 'right'] as const;
+/** Fallback emission per pad key for app-intercepted actions: F14/F13/F15. */
+const FALLBACK_USAGE = { left: 0x69, center: 0x68, right: 0x6a } as const;
+
+/**
+ * What each pad key should type BY ITSELF (on-device mapping): the action's
+ * own key when it is a plain single key (smooth — no app round-trip), else
+ * the fallback F-key which the app intercepts as a global shortcut.
+ */
+function deriveKeyTargets(cfg: AppConfig): (number | null)[] {
+  return KEY_IDS.map((keyId) => {
+    const action = cfg.keys[keyId];
+    if (action.type === 'command') return FALLBACK_USAGE[keyId];
+    if (action.type === 'none') return FALLBACK_USAGE[keyId]; // inert pass-through
+    const usage = action.keys ? chordToHidUsage(action.keys) : null;
+    return usage ?? FALLBACK_USAGE[keyId];
+  });
+}
+
+/** Keys whose action still needs the app's global shortcut + synthesizer. */
+function deriveAppHandledKeys(cfg: AppConfig): ('left' | 'center' | 'right')[] {
+  return KEY_IDS.filter((keyId) => {
+    const action = cfg.keys[keyId];
+    if (action.type === 'none') return false;
+    if (action.type === 'command') return true;
+    return !action.keys || chordToHidUsage(action.keys) === null;
+  });
+}
 
 function assetPath(...parts: string[]): string {
   const root = app.isPackaged
@@ -103,8 +133,14 @@ function applyConfig(next: AppConfig): void {
   const prevPort = config?.port;
   config = next;
   stateMachine.setDoneDecaySeconds(next.doneDecaySeconds);
-  deviceHost.applyConfig(next.states, deriveKeyRoles(next.keys), next.ledBrightness);
-  hotkeys.apply(next);
+  deviceHost.applyConfig(
+    next.states,
+    deriveKeyRoles(next.keys),
+    next.ledBrightness,
+    next.padAutoRemap,
+    deriveKeyTargets(next)
+  );
+  hotkeys.apply(next, deriveAppHandledKeys(next));
   app.setLoginItemSettings({ openAtLogin: next.launchAtLogin });
   if (prevPort !== undefined && prevPort !== next.port) {
     void hookServer.start(next.port).catch((err) => {
@@ -179,9 +215,11 @@ if (!gotLock) {
       externalArtDir,
       config.states,
       deriveKeyRoles(config.keys),
-      config.ledBrightness
+      config.ledBrightness,
+      config.padAutoRemap,
+      deriveKeyTargets(config)
     );
-    hotkeys.apply(config);
+    hotkeys.apply(config, deriveAppHandledKeys(config));
     try {
       await hookServer.start(config.port);
       console.log(`[hook-server] listening on 127.0.0.1:${config.port}`);

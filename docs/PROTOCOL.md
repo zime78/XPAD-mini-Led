@@ -84,6 +84,21 @@ Verified: 240×135@60, vid 0x3710, pid 0x2507.
   identity above). **The payload must be exactly 13 entries — writes with
   more entries (e.g. 16) are rejected outright and change nothing.**
 
+### 0x10 — KeyInfo (per-key mapping) ✔ verified
+- The **header index byte** (offset 7) selects the entry; payload-based
+  addressing is rejected. Read: empty payload → 56-byte entry. Write: same
+  56-byte entry as payload (RAM-only without Save).
+- Entry layout: `u32 key_class` (1 = keyboard key), `u16 site_x`, `u16
+  site_y`, `u16 width`, `u16 height`, `u16 ?? (100)`, `u16 pad`, then key
+  data: modifier byte at offset 20, **HID keycode at offset 21**.
+- XPAD Mini: entries 0/1/2 = the three magnetic keys left/center/right
+  (ascending site_x), factory keycodes q/w/e (0x14/0x1A/0x08); entries 3-7 =
+  knob/buttons (different class). The app rewrites 0-2 to **F14/F13/F15**
+  (0x69/0x68/0x6A) on every connect — center gets F13 as a real pass-through
+  push-to-talk key the app never registers.
+- Caution: concurrent LED/LCD streaming garbles read responses — pause
+  streaming while reading. v1 cmd 0x16 (Key) is stubbed on this firmware.
+
 ### Others (observed, not needed by this app)
 - 0x03 Setting (read: 40-byte config blob)
 - 0x26 LED config: color + mode + speed/brightness + palette, ends with magic

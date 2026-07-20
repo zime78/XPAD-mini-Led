@@ -26,6 +26,8 @@ export type WorkerInMessage =
       states: Record<ClaudeState, StateStyle>;
       keyRoles: KeyRoles;
       ledBrightness: number;
+      padAutoRemap: boolean;
+      padKeyTargets: (number | null)[];
     }
   | { type: 'shutdown' };
 
@@ -38,12 +40,22 @@ export interface WorkerOutMessage {
 const port = parentPort;
 if (!port) throw new Error('device-worker must run in a worker thread');
 
-const { assetRoot, externalDir, states, keyRoles, ledBrightness } = workerData as {
+const {
+  assetRoot,
+  externalDir,
+  states,
+  keyRoles,
+  ledBrightness,
+  padAutoRemap,
+  padKeyTargets,
+} = workerData as {
   assetRoot: string;
   externalDir: string;
   states: Record<ClaudeState, StateStyle>;
   keyRoles: KeyRoles;
   ledBrightness: number;
+  padAutoRemap: boolean;
+  padKeyTargets: (number | null)[];
 };
 
 const device = new XpadDevice();
@@ -58,6 +70,24 @@ lcdEngine.setAnimationListener((name) => {
   ledEngine.setOverlay(name === 'building' ? 'orbit' : null);
 });
 lcdEngine.loadAssets();
+
+let autoRemap = padAutoRemap;
+let keyTargets = padKeyTargets;
+// Map the pad keys to their configured emissions on every (re)connect,
+// RAM-only. Engines pause during the reads: concurrent LED/LCD streaming
+// garbles responses.
+protocol.onReady = () => {
+  if (!autoRemap) return;
+  ledEngine.stop();
+  lcdEngine.stop();
+  void protocol
+    .remapPadKeys(keyTargets)
+    .catch((err) => console.error('[worker] pad remap failed', err))
+    .finally(() => {
+      ledEngine.start();
+      lcdEngine.start();
+    });
+};
 
 let lastStatus = '';
 function reportStatus(): void {
@@ -86,11 +116,20 @@ port.on('message', (msg: WorkerInMessage) => {
     case 'oneShot':
       lcdEngine.playOneShot(msg.role);
       break;
-    case 'applyConfig':
+    case 'applyConfig': {
       ledEngine.setStyles(msg.states);
       ledEngine.setKeyRoles(msg.keyRoles);
       ledEngine.setBrightness(msg.ledBrightness);
+      const turnedOn = !autoRemap && msg.padAutoRemap;
+      const targetsChanged =
+        JSON.stringify(keyTargets) !== JSON.stringify(msg.padKeyTargets);
+      autoRemap = msg.padAutoRemap;
+      keyTargets = msg.padKeyTargets;
+      if ((turnedOn || targetsChanged) && autoRemap && protocol.ready) {
+        protocol.onReady?.();
+      }
       break;
+    }
     case 'shutdown':
       void shutdown();
   }

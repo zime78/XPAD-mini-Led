@@ -1,7 +1,10 @@
 import { ClaudeState, KeyId, KeyRoles, StateStyle } from '../../shared/types';
 import { Rgb, XpadProtocol } from './protocol';
 
-const FPS = 30;
+// 20 Hz is visually smooth with the interpolated dot and keeps vendor-channel
+// packet pressure low: heavy streaming delays the firmware's own key
+// scanning/reporting (measured as clumpy keystrokes).
+const FPS = 20;
 
 /**
  * Physical LED layout, calibrated against the device with the user's eyes

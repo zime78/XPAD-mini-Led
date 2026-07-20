@@ -19,9 +19,14 @@ export class HotkeyManager {
     this.listener = listener;
   }
 
-  apply(config: AppConfig): void {
+  /**
+   * Register global shortcuts ONLY for keys the app must intercept (shell
+   * commands, modified chords). Plain single-key actions are typed by the
+   * pad itself — the device keymap handles them with no app involvement.
+   */
+  apply(config: AppConfig, appHandledKeys: KeyId[]): void {
     globalShortcut.unregisterAll();
-    for (const keyId of ['left', 'center', 'right'] as KeyId[]) {
+    for (const keyId of appHandledKeys) {
       this.registerOne(keyId, config);
     }
   }
@@ -69,6 +74,7 @@ export class HotkeyManager {
   }
 
   private async execute(keyId: KeyId, config: AppConfig): Promise<void> {
+    const t0 = Date.now();
     const action = config.keys[keyId];
     let executed = false;
     try {
@@ -109,6 +115,9 @@ export class HotkeyManager {
     } catch (err) {
       console.error(`[hotkeys] action for ${keyId} failed`, err);
     }
+    console.log(
+      `[hotkeys] ${keyId} ${action.type} at=${t0} took=${Date.now() - t0}ms executed=${executed}`
+    );
     this.listener?.(keyId, executed);
   }
 

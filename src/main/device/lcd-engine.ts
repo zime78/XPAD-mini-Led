@@ -174,6 +174,7 @@ export class LcdEngine {
     this.role = role;
     this.currentAnim = this.resolve(role);
     this.frameIndex = 0;
+    this.frameShownAt = 0;
     this.reschedule();
   }
 
@@ -190,6 +191,7 @@ export class LcdEngine {
   playOneShot(role: Extract<ClawdRole, 'approve' | 'reject' | 'dictation'>): void {
     this.oneShot = { anim: this.resolve(role), until: Date.now() + ONESHOT_MS };
     this.frameIndex = 0;
+    this.frameShownAt = 0;
     this.reschedule();
   }
 
@@ -217,11 +219,14 @@ export class LcdEngine {
       this.workingRotatedAt = Date.now();
       this.currentAnim = this.resolve('working');
       this.frameIndex = 0;
+      this.frameShownAt = 0;
     }
     return this.currentAnim;
   }
 
   private epoch = 0;
+
+  private frameShownAt = 0;
 
   private reschedule(): void {
     if (this.timer) clearTimeout(this.timer);
@@ -236,13 +241,21 @@ export class LcdEngine {
       const anim = this.animations.get(name);
       if (anim) {
         const idx = this.frameIndex % anim.frames.length;
-        this.frameIndex++;
-        const started = Date.now();
+        if (this.frameShownAt === 0) this.frameShownAt = Date.now();
         await this.protocol.drawLcdFrame(anim.frames[idx]);
         if (myEpoch !== this.epoch) return;
-        // Account for send time so the animation keeps its intended pace.
-        const remaining = Math.max(10, anim.delays[idx] - (Date.now() - started));
-        this.timer = setTimeout(() => void tick(), remaining);
+        // Long frame holds are re-ticked in slices: each identical redraw
+        // costs one keep-alive packet but keeps the firmware's own UI
+        // suppressed (it flashes through after ~0.5 s without traffic).
+        const elapsed = Date.now() - this.frameShownAt;
+        const delay = anim.delays[idx];
+        if (elapsed >= delay - 10) {
+          this.frameIndex++;
+          this.frameShownAt = 0;
+          this.timer = setTimeout(() => void tick(), 10);
+        } else {
+          this.timer = setTimeout(() => void tick(), Math.min(delay - elapsed, 350));
+        }
       } else {
         // Assets missing: retry slowly.
         this.timer = setTimeout(() => void tick(), 1000);

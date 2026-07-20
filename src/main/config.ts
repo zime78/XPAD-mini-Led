@@ -48,6 +48,12 @@ function migrate(config: AppConfig): AppConfig {
       action.keys = DEFAULT_CONFIG.keys[keyId as keyof AppConfig['keys']].keys;
     }
   }
+  // Pre-0.1.3 trigger layout (left=F13, center=F14): center now emits F13 so
+  // it can serve as a real push-to-talk key.
+  const h = config.hotkeys;
+  if (h.left === 'F13' && h.center === 'F14' && h.right === 'F15') {
+    config.hotkeys = { ...DEFAULT_CONFIG.hotkeys };
+  }
   return config;
 }
 

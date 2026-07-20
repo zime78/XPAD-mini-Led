@@ -7,10 +7,11 @@ on Windows and macOS.
 - **LEDs mirror Claude's state** — blue scan while the agent works, flashing
   red when it needs you, pulsing green when it's done, and an orbiting dot
   around the whole pad while Clawd is in hard-hat "building" mode.
-- **Keys** — left approves (types `y`), right rejects (types `n`) — sent to
-  your terminal, guarded by a process allowlist; center taps `F13` for your
-  dictation app (e.g. Wispr Flow bound to F13). Everything is remappable in
-  the settings UI.
+- **Keys** — the app maps the actions straight onto the pad: left types `y`
+  (approve), right types `n` (reject), center is a real `F13` key — bind your
+  dictation app's push-to-talk (e.g. Wispr Flow) to F13. Everything is
+  remappable in the settings UI; only shell-command actions and modified
+  chords route through the app (with the process-allowlist guard).
 - **LCD** — Clawd the crab reacts to what's happening: typing while Claude
   works, celebrating on completion, sleeping when idle.
 
@@ -30,9 +31,12 @@ on Windows, SmartScreen needs "More info → Run anyway"; on macOS, right-click
 2. Click **Install hooks** — this merges hook entries into
    `~/.claude/settings.json` so Claude Code reports its lifecycle events to
    the app. **Uninstall hooks** removes them cleanly.
-3. Remap the pad's three keys from Z/X/C to F13/F14/F15 so the app can grab
-   them as global shortcuts: hold the volume knob ~2 s to open the on-device
-   menu → Keymap (or use Pulsar's Bibimbap web driver at `bbb.pulsar.gg`).
+3. That's it — while the app runs, it maps your configured key actions
+   directly onto the pad over the vendor protocol, RAM-only: by default the
+   pad itself types `y` / `F13` / `n`, with zero added latency. Unplugging
+   restores the factory keymap; the app re-applies on reconnect. (To use the
+   pad without the app, you can still remap permanently: hold the volume
+   knob ~2 s → Keymap, or Pulsar's Bibimbap web driver at `bbb.pulsar.gg`.)
 4. Optional: adjust colors, key actions, the process allowlist, and LED
    brightness in the settings UI.
 

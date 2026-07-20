@@ -20,10 +20,20 @@ export class DeviceHost extends EventEmitter {
     externalDir: string,
     states: Record<ClaudeState, StateStyle>,
     keyRoles: KeyRoles,
-    ledBrightness: number
+    ledBrightness: number,
+    padAutoRemap: boolean,
+    padKeyTargets: (number | null)[]
   ): void {
     this.worker = new Worker(path.join(__dirname, 'device-worker.js'), {
-      workerData: { assetRoot, externalDir, states, keyRoles, ledBrightness },
+      workerData: {
+        assetRoot,
+        externalDir,
+        states,
+        keyRoles,
+        ledBrightness,
+        padAutoRemap,
+        padKeyTargets,
+      },
     });
     this.worker.on('message', (msg: WorkerOutMessage) => {
       if (msg.type === 'status') {
@@ -54,9 +64,18 @@ export class DeviceHost extends EventEmitter {
   applyConfig(
     states: Record<ClaudeState, StateStyle>,
     keyRoles: KeyRoles,
-    ledBrightness: number
+    ledBrightness: number,
+    padAutoRemap: boolean,
+    padKeyTargets: (number | null)[]
   ): void {
-    this.send({ type: 'applyConfig', states, keyRoles, ledBrightness });
+    this.send({
+      type: 'applyConfig',
+      states,
+      keyRoles,
+      ledBrightness,
+      padAutoRemap,
+      padKeyTargets,
+    });
   }
 
   /**

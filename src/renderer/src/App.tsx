@@ -140,6 +140,15 @@ export function App() {
 
       <section>
         <h2>Keys</h2>
+        <label className="inline">
+          <input
+            type="checkbox"
+            checked={config.padAutoRemap}
+            onChange={(e) => patch((d) => (d.padAutoRemap = e.target.checked))}
+          />
+          Map pad keys to F13/F14/F15 automatically while connected (no
+          on-device setup needed; resets on unplug)
+        </label>
         {(['left', 'center', 'right'] as KeyId[]).map((keyId) => {
           const action = config.keys[keyId];
           return (
@@ -266,7 +275,9 @@ export function App() {
             checked={config.guardEnabled}
             onChange={(e) => patch((d) => (d.guardEnabled = e.target.checked))}
           />
-          Only send Approve/Reject when the focused app matches the allowlist
+          Only send app-routed keys when the focused app matches the allowlist
+          (plain single-key actions are typed by the pad itself and are not
+          guarded)
         </label>
         <textarea
           rows={6}
