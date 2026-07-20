@@ -90,12 +90,15 @@ Verified: 240×135@60, vid 0x3710, pid 0x2507.
   56-byte entry as payload (RAM-only without Save).
 - Entry layout: `u32 key_class` (1 = keyboard key), `u16 site_x`, `u16
   site_y`, `u16 width`, `u16 height`, `u16 ?? (100)`, `u16 pad`, then key
-  data: modifier byte at offset 20, **HID keycode at offset 21**.
+  data: **modifier byte at offset 20** (standard HID modifier bitmask: 0x01
+  LCtrl, 0x02 LShift, 0x04 LAlt, 0x08 LWin/LCmd), **HID keycode at offset
+  21** (0 = no keyboard key, i.e. a pure modifier-only chord).
 - XPAD Mini: entries 0/1/2 = the three magnetic keys left/center/right
   (ascending site_x), factory keycodes q/w/e (0x14/0x1A/0x08); entries 3-7 =
-  knob/buttons (different class). The app rewrites 0-2 to **F14/F13/F15**
-  (0x69/0x68/0x6A) on every connect — center gets F13 as a real pass-through
-  push-to-talk key the app never registers.
+  knob/buttons (different class). The app rewrites 0-2 on every connect to
+  whatever the configured key actions resolve to — default left=`y`
+  (0x00/0x1C), right=`n` (0x00/0x11), center=**Left Ctrl+Left Win held**
+  (mod=0x09, key=0x00 — Wispr Flow's own Windows push-to-talk default).
 - Caution: concurrent LED/LCD streaming garbles read responses — pause
   streaming while reading. v1 cmd 0x16 (Key) is stubbed on this firmware.
 

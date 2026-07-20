@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import type { HidTarget } from '../../shared/types';
 
 /**
  * Synthesize a key chord like "Enter", "Escape", or "Ctrl+Alt+Space" into the
@@ -37,7 +38,9 @@ export function parseChord(chord: string): Chord | null {
     else if (out.key) return null; // two non-modifier keys
     else out.key = normalizeKey(part);
   }
-  return out.key ? out : null;
+  // Modifier-only chords (e.g. "Ctrl+Win" push-to-talk) are valid too.
+  if (!out.key && !(out.ctrl || out.alt || out.shift || out.meta)) return null;
+  return out;
 }
 
 function normalizeKey(key: string): string {
@@ -74,13 +77,21 @@ for (let i = 1; i <= 12; i++) HID_USAGE[`f${i}`] = 0x3a + i - 1;
 for (let i = 13; i <= 24; i++) HID_USAGE[`f${i}`] = 0x68 + i - 13;
 
 /**
- * USB HID usage for a chord the pad can type by itself (single key, no
- * modifiers), or null if the chord needs the app's synthesizer.
+ * What the pad should emit for a chord (modifier bits + usage), or null if
+ * the chord names a key the keyboard page can't express — those need the
+ * app's synthesizer.
  */
-export function chordToHidUsage(chord: string): number | null {
+export function chordToHidTarget(chord: string): HidTarget | null {
   const parsed = parseChord(chord);
-  if (!parsed || parsed.ctrl || parsed.alt || parsed.shift || parsed.meta) return null;
-  return HID_USAGE[parsed.key] ?? null;
+  if (!parsed) return null;
+  const key = parsed.key ? HID_USAGE[parsed.key] : 0;
+  if (key === undefined) return null;
+  const mod =
+    (parsed.ctrl ? 0x01 : 0) |
+    (parsed.shift ? 0x02 : 0) |
+    (parsed.alt ? 0x04 : 0) |
+    (parsed.meta ? 0x08 : 0);
+  return { mod, key };
 }
 
 // --- Windows: SendInput ------------------------------------------------------

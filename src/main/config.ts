@@ -54,6 +54,12 @@ function migrate(config: AppConfig): AppConfig {
   if (h.left === 'F13' && h.center === 'F14' && h.right === 'F15') {
     config.hotkeys = { ...DEFAULT_CONFIG.hotkeys };
   }
+  // Pre-0.1.4 push-to-talk default (single F13): dictation apps often refuse
+  // single keys; the default is now a modifier combo (platform-dependent).
+  const center = config.keys.center;
+  if (center.type === 'hotkey' && center.keys === 'F13') {
+    config.keys.center = { ...DEFAULT_CONFIG.keys.center };
+  }
   return config;
 }
 

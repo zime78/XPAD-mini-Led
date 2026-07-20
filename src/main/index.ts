@@ -7,7 +7,8 @@ import {
   StatusSnapshot,
 } from '../shared/types';
 import { loadConfig, saveConfig } from './config';
-import { chordToHidUsage } from './input/send-keys';
+import { chordToHidTarget } from './input/send-keys';
+import type { HidTarget } from '../shared/types';
 import { HookServer } from './claude/hook-server';
 import {
   areHooksInstalled,
@@ -32,17 +33,18 @@ const KEY_IDS = ['left', 'center', 'right'] as const;
 const FALLBACK_USAGE = { left: 0x69, center: 0x68, right: 0x6a } as const;
 
 /**
- * What each pad key should type BY ITSELF (on-device mapping): the action's
- * own key when it is a plain single key (smooth — no app round-trip), else
- * the fallback F-key which the app intercepts as a global shortcut.
+ * What each pad key should emit BY ITSELF (on-device mapping): the action's
+ * own chord when the keyboard page can express it (smooth — no app
+ * round-trip), else the fallback F-key which the app intercepts as a global
+ * shortcut.
  */
-function deriveKeyTargets(cfg: AppConfig): (number | null)[] {
+function deriveKeyTargets(cfg: AppConfig): (HidTarget | null)[] {
   return KEY_IDS.map((keyId) => {
+    const fallback: HidTarget = { mod: 0, key: FALLBACK_USAGE[keyId] };
     const action = cfg.keys[keyId];
-    if (action.type === 'command') return FALLBACK_USAGE[keyId];
-    if (action.type === 'none') return FALLBACK_USAGE[keyId]; // inert pass-through
-    const usage = action.keys ? chordToHidUsage(action.keys) : null;
-    return usage ?? FALLBACK_USAGE[keyId];
+    if (action.type === 'command') return fallback;
+    if (action.type === 'none') return fallback; // inert pass-through
+    return (action.keys ? chordToHidTarget(action.keys) : null) ?? fallback;
   });
 }
 
@@ -52,7 +54,7 @@ function deriveAppHandledKeys(cfg: AppConfig): ('left' | 'center' | 'right')[] {
     const action = cfg.keys[keyId];
     if (action.type === 'none') return false;
     if (action.type === 'command') return true;
-    return !action.keys || chordToHidUsage(action.keys) === null;
+    return !action.keys || chordToHidTarget(action.keys) === null;
   });
 }
 

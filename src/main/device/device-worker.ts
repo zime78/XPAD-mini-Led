@@ -6,7 +6,7 @@
  * Spawned by DeviceHost with workerData { assetRoot }.
  */
 import { parentPort, workerData } from 'node:worker_threads';
-import { ClaudeState, KeyRoles, StateStyle } from '../../shared/types';
+import { ClaudeState, HidTarget, KeyRoles, StateStyle } from '../../shared/types';
 import { XpadDevice } from './hid';
 import {
   BACKLIGHT_COUNT,
@@ -27,7 +27,7 @@ export type WorkerInMessage =
       keyRoles: KeyRoles;
       ledBrightness: number;
       padAutoRemap: boolean;
-      padKeyTargets: (number | null)[];
+      padKeyTargets: (HidTarget | null)[];
     }
   | { type: 'shutdown' };
 
@@ -55,7 +55,7 @@ const {
   keyRoles: KeyRoles;
   ledBrightness: number;
   padAutoRemap: boolean;
-  padKeyTargets: (number | null)[];
+  padKeyTargets: (HidTarget | null)[];
 };
 
 const device = new XpadDevice();

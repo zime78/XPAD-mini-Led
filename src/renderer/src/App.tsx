@@ -2,8 +2,6 @@ import { useEffect, useState } from 'react';
 import type {
   AppConfig,
   ClaudeState,
-  KeyActionType,
-  KeyId,
   LedEffect,
   StatusSnapshot,
 } from '../../shared/types';
@@ -13,20 +11,6 @@ const STATE_COLORS: Record<ClaudeState, string> = {
   working: '#2563eb',
   attention: '#dc2626',
   done: '#16a34a',
-};
-
-const KEY_LABELS: Record<KeyId, string> = {
-  left: 'Left key',
-  center: 'Center key',
-  right: 'Right key',
-};
-
-const ACTION_LABELS: Record<KeyActionType, string> = {
-  approve: 'Approve (send key to terminal)',
-  reject: 'Reject (send key to terminal)',
-  hotkey: 'Send hotkey (no focus guard)',
-  command: 'Run command',
-  none: 'Pass through (do nothing)',
 };
 
 const EFFECTS: LedEffect[] = ['scan', 'pulse', 'flash', 'steady', 'off'];
@@ -139,82 +123,6 @@ export function App() {
       </section>
 
       <section>
-        <h2>Keys</h2>
-        <label className="inline">
-          <input
-            type="checkbox"
-            checked={config.padAutoRemap}
-            onChange={(e) => patch((d) => (d.padAutoRemap = e.target.checked))}
-          />
-          Map pad keys to F13/F14/F15 automatically while connected (no
-          on-device setup needed; resets on unplug)
-        </label>
-        {(['left', 'center', 'right'] as KeyId[]).map((keyId) => {
-          const action = config.keys[keyId];
-          return (
-            <div className="key-card" key={keyId}>
-              <div className="key-card-head">
-                <strong>{KEY_LABELS[keyId]}</strong>
-                <label>
-                  emits
-                  <input
-                    className="short"
-                    value={config.hotkeys[keyId]}
-                    onChange={(e) =>
-                      patch((d) => (d.hotkeys[keyId] = e.target.value))
-                    }
-                  />
-                </label>
-              </div>
-              <div className="key-card-body">
-                <select
-                  value={action.type}
-                  onChange={(e) =>
-                    patch(
-                      (d) =>
-                        (d.keys[keyId].type = e.target.value as KeyActionType)
-                    )
-                  }
-                >
-                  {Object.entries(ACTION_LABELS).map(([value, label]) => (
-                    <option key={value} value={value}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
-                {(action.type === 'approve' ||
-                  action.type === 'reject' ||
-                  action.type === 'hotkey') && (
-                  <label>
-                    keys
-                    <input
-                      value={action.keys ?? ''}
-                      placeholder="e.g. y, n, F13, Ctrl+Alt+Space"
-                      onChange={(e) =>
-                        patch((d) => (d.keys[keyId].keys = e.target.value))
-                      }
-                    />
-                  </label>
-                )}
-                {action.type === 'command' && (
-                  <label>
-                    command
-                    <input
-                      value={action.command ?? ''}
-                      placeholder="shell command"
-                      onChange={(e) =>
-                        patch((d) => (d.keys[keyId].command = e.target.value))
-                      }
-                    />
-                  </label>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </section>
-
-      <section>
         <h2>LED states</h2>
         {(['working', 'attention', 'done', 'idle'] as ClaudeState[]).map((s) => (
           <div className="state-card" key={s}>
@@ -265,37 +173,6 @@ export function App() {
           />
           seconds
         </label>
-      </section>
-
-      <section>
-        <h2>Keystroke guard</h2>
-        <label className="inline">
-          <input
-            type="checkbox"
-            checked={config.guardEnabled}
-            onChange={(e) => patch((d) => (d.guardEnabled = e.target.checked))}
-          />
-          Only send app-routed keys when the focused app matches the allowlist
-          (plain single-key actions are typed by the pad itself and are not
-          guarded)
-        </label>
-        <textarea
-          rows={6}
-          value={config.processAllowlist.join('\n')}
-          onChange={(e) =>
-            patch(
-              (d) =>
-                (d.processAllowlist = e.target.value
-                  .split('\n')
-                  .map((l) => l.trim())
-                  .filter(Boolean))
-            )
-          }
-        />
-        <p className="hint">
-          One entry per line, matched as a lowercase substring of the focused
-          process name (e.g. “windowsterminal”, “iterm”).
-        </p>
       </section>
 
       <section>

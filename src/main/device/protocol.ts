@@ -1,3 +1,4 @@
+import type { HidTarget } from '../../shared/types';
 import { XpadDevice } from './hid';
 
 export interface Rgb {
@@ -149,14 +150,14 @@ export class XpadProtocol {
   }
 
   /**
-   * Map the three pad keys (factory q/w/e) to the given HID usages so the pad
-   * types the configured actions BY ITSELF (a hotkey round-trip through the
+   * Map the three pad keys (factory q/w/e) to the given targets (modifier
+   * bits + usage — modifier-only combos like Ctrl+Win work too) so the pad
+   * emits the configured actions BY ITSELF (a hotkey round-trip through the
    * app clumps under load) — RAM-only, like everything else here: no Save is
    * sent, replugging restores the on-device keymap, and this re-runs on every
-   * reconnect. Null targets and entries with modifiers or non-keyboard
-   * classes are left alone.
+   * reconnect. Null targets and non-keyboard entry classes are left alone.
    */
-  async remapPadKeys(targets: (number | null)[]): Promise<void> {
+  async remapPadKeys(targets: (HidTarget | null)[]): Promise<void> {
     for (let i = 0; i < targets.length; i++) {
       const target = targets[i];
       if (target === null) continue;
@@ -164,19 +165,23 @@ export class XpadProtocol {
       for (let attempt = 0; attempt < 3 && !entry; attempt++) {
         entry = await this.readKeyInfo(i);
       }
-      if (!entry || entry.readUInt32LE(0) !== 1 || entry[KEY_MODIFIER_OFFSET] !== 0) {
+      if (!entry || entry.readUInt32LE(0) !== 1) {
         if (!entry) console.error(`[protocol] remap: could not read key ${i}`);
         continue;
       }
-      const current = entry[KEY_KEYCODE_OFFSET];
-      if (current === target) continue;
+      const curMod = entry[KEY_MODIFIER_OFFSET];
+      const curKey = entry[KEY_KEYCODE_OFFSET];
+      if (curMod === target.mod && curKey === target.key) continue;
       const patched = Buffer.from(entry);
-      patched[KEY_KEYCODE_OFFSET] = target;
+      patched[KEY_MODIFIER_OFFSET] = target.mod;
+      patched[KEY_KEYCODE_OFFSET] = target.key;
       const dev = this.device.bulk;
       if (!dev) return;
       this.tryWrite(dev, this.buildPacket(CMD_KEY_INFO, patched, i), 'remapPadKeys');
       console.log(
-        `[protocol] pad key ${i} mapped 0x${current.toString(16)} -> 0x${target.toString(16)}`
+        `[protocol] pad key ${i} mapped mod=0x${curMod.toString(16)},key=0x${curKey.toString(
+          16
+        )} -> mod=0x${target.mod.toString(16)},key=0x${target.key.toString(16)}`
       );
     }
   }

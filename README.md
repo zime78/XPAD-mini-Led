@@ -8,10 +8,9 @@ on Windows and macOS.
   red when it needs you, pulsing green when it's done, and an orbiting dot
   around the whole pad while Clawd is in hard-hat "building" mode.
 - **Keys** — the app maps the actions straight onto the pad: left types `y`
-  (approve), right types `n` (reject), center is a real `F13` key — bind your
-  dictation app's push-to-talk (e.g. Wispr Flow) to F13. Everything is
-  remappable in the settings UI; only shell-command actions and modified
-  chords route through the app (with the process-allowlist guard).
+  (approve), right types `n` (reject), center holds **Left Ctrl+Left Win**
+  (Wispr Flow's own Windows push-to-talk default — bind your dictation app
+  to that combo, or to `F13` on macOS, where Ctrl+Win isn't available).
 - **LCD** — Clawd the crab reacts to what's happening: typing while Claude
   works, celebrating on completion, sleeping when idle.
 
@@ -31,14 +30,15 @@ on Windows, SmartScreen needs "More info → Run anyway"; on macOS, right-click
 2. Click **Install hooks** — this merges hook entries into
    `~/.claude/settings.json` so Claude Code reports its lifecycle events to
    the app. **Uninstall hooks** removes them cleanly.
-3. That's it — while the app runs, it maps your configured key actions
-   directly onto the pad over the vendor protocol, RAM-only: by default the
-   pad itself types `y` / `F13` / `n`, with zero added latency. Unplugging
-   restores the factory keymap; the app re-applies on reconnect. (To use the
-   pad without the app, you can still remap permanently: hold the volume
-   knob ~2 s → Keymap, or Pulsar's Bibimbap web driver at `bbb.pulsar.gg`.)
-4. Optional: adjust colors, key actions, the process allowlist, and LED
-   brightness in the settings UI.
+3. That's it — while the app runs, it maps the key actions directly onto the
+   pad over the vendor protocol, RAM-only: the pad itself types `y` / holds
+   Ctrl+Win / types `n`, with zero added latency. Unplugging restores the
+   factory keymap; the app re-applies on reconnect. (To use the pad without
+   the app, you can still remap permanently: hold the volume knob ~2 s →
+   Keymap, or Pulsar's Bibimbap web driver at `bbb.pulsar.gg`.) Key actions
+   aren't exposed in the settings UI — edit `config.json` in the app's data
+   directory if you want different ones.
+4. Optional: adjust LED colors/effects and brightness in the settings UI.
 
 ## Development
 

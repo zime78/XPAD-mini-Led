@@ -40,6 +40,14 @@ export interface AppConfig {
   launchAtLogin: boolean;
 }
 
+/** What a pad key should emit on-device: HID modifier bits + keyboard usage. */
+export interface HidTarget {
+  /** 0x01 LCtrl, 0x02 LShift, 0x04 LAlt, 0x08 LWin/LCmd */
+  mod: number;
+  /** HID keyboard usage, 0 for modifier-only chords */
+  key: number;
+}
+
 /** Which physical key currently carries which semantic action. */
 export interface KeyRoles {
   approve?: KeyId;
@@ -76,14 +84,19 @@ export interface StatusSnapshot {
 
 export const DEFAULT_CONFIG: AppConfig = {
   port: 3939,
-  // Single-key actions are mapped ONTO the pad (it types y/n/F13 itself —
-  // the hotkey round-trip through the app clumps under load). `hotkeys` are
-  // the fallback keys the pad emits for actions the app must intercept
-  // (shell commands, modified chords).
+  // Key actions are mapped ONTO the pad (it types them itself — a hotkey
+  // round-trip through the app clumps under load). Center is push-to-talk:
+  // Ctrl+Win (Wispr Flow's Windows default); macOS falls back to F13 since
+  // the Apple Fn/Globe key has no standard HID keyboard usage. `hotkeys`
+  // are the fallback keys the pad emits for actions the app must intercept
+  // (shell commands, chords the keyboard page can't express).
   hotkeys: { left: 'F14', center: 'F13', right: 'F15' },
   keys: {
     left: { type: 'approve', keys: 'y' },
-    center: { type: 'hotkey', keys: 'F13' },
+    center: {
+      type: 'hotkey',
+      keys: process.platform === 'darwin' ? 'F13' : 'Ctrl+Win',
+    },
     right: { type: 'reject', keys: 'n' },
   },
   // Fully saturated colors: LEDs wash muted sRGB palette colors out (a red

@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import path from 'node:path';
 import { Worker } from 'node:worker_threads';
-import { ClaudeState, KeyRoles, StateStyle } from '../../shared/types';
+import { ClaudeState, HidTarget, KeyRoles, StateStyle } from '../../shared/types';
 import type { WorkerInMessage, WorkerOutMessage } from './device-worker';
 import type { ClawdRole } from './lcd-engine';
 
@@ -22,7 +22,7 @@ export class DeviceHost extends EventEmitter {
     keyRoles: KeyRoles,
     ledBrightness: number,
     padAutoRemap: boolean,
-    padKeyTargets: (number | null)[]
+    padKeyTargets: (HidTarget | null)[]
   ): void {
     this.worker = new Worker(path.join(__dirname, 'device-worker.js'), {
       workerData: {
@@ -66,7 +66,7 @@ export class DeviceHost extends EventEmitter {
     keyRoles: KeyRoles,
     ledBrightness: number,
     padAutoRemap: boolean,
-    padKeyTargets: (number | null)[]
+    padKeyTargets: (HidTarget | null)[]
   ): void {
     this.send({
       type: 'applyConfig',
