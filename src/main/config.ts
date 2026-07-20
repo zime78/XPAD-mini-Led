@@ -16,6 +16,13 @@ const LEGACY_STATE_COLORS: Record<string, string> = {
   done: '#16a34a',
 };
 
+/** Pre-0.1.2 default key actions; stored configs still on them get the new defaults. */
+const LEGACY_KEY_DEFAULTS: Record<string, { type: string; keys: string }> = {
+  left: { type: 'approve', keys: 'Enter' },
+  center: { type: 'hotkey', keys: 'Ctrl+Alt+Space' },
+  right: { type: 'reject', keys: 'Escape' },
+};
+
 export function loadConfig(): AppConfig {
   if (cached) return cached;
   try {
@@ -27,12 +34,18 @@ export function loadConfig(): AppConfig {
   return cached;
 }
 
-/** Upgrade old default state colors to the new saturated ones; user-picked colors stay. */
+/** Upgrade old defaults to the new ones; user-picked values stay. */
 function migrate(config: AppConfig): AppConfig {
   for (const [state, legacy] of Object.entries(LEGACY_STATE_COLORS)) {
     const style = config.states[state as keyof AppConfig['states']];
     if (style?.color?.toLowerCase() === legacy) {
       style.color = DEFAULT_CONFIG.states[state as keyof AppConfig['states']].color;
+    }
+  }
+  for (const [keyId, legacy] of Object.entries(LEGACY_KEY_DEFAULTS)) {
+    const action = config.keys[keyId as keyof AppConfig['keys']];
+    if (action?.type === legacy.type && action.keys === legacy.keys) {
+      action.keys = DEFAULT_CONFIG.keys[keyId as keyof AppConfig['keys']].keys;
     }
   }
   return config;

@@ -22,17 +22,45 @@ export class HotkeyManager {
   apply(config: AppConfig): void {
     globalShortcut.unregisterAll();
     for (const keyId of ['left', 'center', 'right'] as KeyId[]) {
-      const action = config.keys[keyId];
-      const accelerator = config.hotkeys[keyId];
-      if (!accelerator || action.type === 'none') continue;
-      try {
-        const ok = globalShortcut.register(accelerator, () => {
-          void this.execute(keyId, config);
-        });
-        if (!ok) console.error(`[hotkeys] failed to register ${accelerator}`);
-      } catch (err) {
-        console.error(`[hotkeys] register ${accelerator} threw`, err);
-      }
+      this.registerOne(keyId, config);
+    }
+  }
+
+  private registerOne(keyId: KeyId, config: AppConfig): void {
+    const action = config.keys[keyId];
+    const accelerator = config.hotkeys[keyId];
+    if (!accelerator || action.type === 'none') return;
+    try {
+      const ok = globalShortcut.register(accelerator, () => {
+        void this.execute(keyId, config);
+      });
+      if (!ok) console.error(`[hotkeys] failed to register ${accelerator}`);
+    } catch (err) {
+      console.error(`[hotkeys] register ${accelerator} threw`, err);
+    }
+  }
+
+  /**
+   * Synthesize a chord without our own global shortcut swallowing it: the
+   * default dictation action sends F13 while the left pad key IS F13 (the
+   * pad emits F13/F14/F15), so a colliding accelerator is unregistered
+   * around the send and re-grabbed after the event has cleared the queue.
+   */
+  private async synthesize(chord: string, config: AppConfig): Promise<void> {
+    const norm = (s: string) => s.replace(/\s/g, '').toLowerCase();
+    const colliding = (['left', 'center', 'right'] as KeyId[]).find(
+      (keyId) =>
+        config.keys[keyId].type !== 'none' &&
+        config.hotkeys[keyId] &&
+        norm(config.hotkeys[keyId]) === norm(chord)
+    );
+    if (colliding === undefined) return sendKeys(chord);
+    globalShortcut.unregister(config.hotkeys[colliding]);
+    try {
+      await sendKeys(chord);
+      await new Promise<void>((resolve) => setTimeout(resolve, 80));
+    } finally {
+      this.registerOne(colliding, config);
     }
   }
 
@@ -51,14 +79,17 @@ export class HotkeyManager {
             console.log(`[hotkeys] ${keyId}: blocked by focus guard`);
             break;
           }
-          await sendKeys(action.keys || (action.type === 'approve' ? 'Enter' : 'Escape'));
+          await this.synthesize(
+            action.keys || (action.type === 'approve' ? 'y' : 'n'),
+            config
+          );
           executed = true;
           break;
         }
         case 'hotkey': {
           // Dictation etc. should work anywhere: no focus guard.
           if (action.keys) {
-            await sendKeys(action.keys);
+            await this.synthesize(action.keys, config);
             executed = true;
           }
           break;

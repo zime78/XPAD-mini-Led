@@ -76,9 +76,9 @@ export const DEFAULT_CONFIG: AppConfig = {
   port: 3939,
   hotkeys: { left: 'F13', center: 'F14', right: 'F15' },
   keys: {
-    left: { type: 'approve', keys: 'Enter' },
-    center: { type: 'hotkey', keys: 'Ctrl+Alt+Space' },
-    right: { type: 'reject', keys: 'Escape' },
+    left: { type: 'approve', keys: 'y' },
+    center: { type: 'hotkey', keys: 'F13' },
+    right: { type: 'reject', keys: 'n' },
   },
   // Fully saturated colors: LEDs wash muted sRGB palette colors out (a red
   // with G/B components reads as pink on the strip).

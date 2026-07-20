@@ -7,9 +7,10 @@ on Windows and macOS.
 - **LEDs mirror Claude's state** — blue scan while the agent works, flashing
   red when it needs you, pulsing green when it's done, and an orbiting dot
   around the whole pad while Clawd is in hard-hat "building" mode.
-- **Keys** — left approves, right rejects (sent to your terminal, guarded by a
-  process allowlist), center triggers your dictation hotkey (e.g. Wispr Flow).
-  Everything is remappable in the settings UI.
+- **Keys** — left approves (types `y`), right rejects (types `n`) — sent to
+  your terminal, guarded by a process allowlist; center taps `F13` for your
+  dictation app (e.g. Wispr Flow bound to F13). Everything is remappable in
+  the settings UI.
 - **LCD** — Clawd the crab reacts to what's happening: typing while Claude
   works, celebrating on completion, sleeping when idle.
 

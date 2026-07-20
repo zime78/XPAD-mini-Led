@@ -180,7 +180,7 @@ export function App() {
                     keys
                     <input
                       value={action.keys ?? ''}
-                      placeholder="e.g. Enter, Escape, Ctrl+Alt+Space"
+                      placeholder="e.g. y, n, F13, Ctrl+Alt+Space"
                       onChange={(e) =>
                         patch((d) => (d.keys[keyId].keys = e.target.value))
                       }
