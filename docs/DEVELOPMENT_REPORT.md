@@ -173,9 +173,17 @@ readback으로 확인한다. 설정 비활성화와 정상 종료 때 출고 Vol
 
 - [`src/main/index.ts`](../src/main/index.ts)
 - [`src/renderer/src/App.tsx`](../src/renderer/src/App.tsx)
+- [`src/renderer/src/components/`](../src/renderer/src/components/)
 - [`src/main/config.ts`](../src/main/config.ts)
 
-설정 화면에서는 다음 항목을 변경할 수 있다.
+창을 열면 별도 소개 헤더 없이 재생 패널만 표시한다. 패널 왼쪽 위에는 USB·LCD
+프로토콜·XPAD 노브 상태를 텍스트 없이 장치 아이콘과 녹색 점(연결) 또는 빨간 ×(실패)로
+표시한다. 패널 오른쪽 위 설정 아이콘을 누르면 재생 화면 대신 상세 장치 상태와 설정 화면이
+열리며, 닫기 아이콘으로 재생 화면에 돌아간다. renderer의 IPC 상태 수명주기는 `App.tsx`가
+담당하고 재생 화면, 소형 상태 표시, 상세 장치 상태, 표시 설정, 노브 설정은 각각 독립
+컴포넌트로 분리했다.
+
+설정 화면에서는 다음 항목을 확인하거나 변경할 수 있다.
 
 - 음악 앱 자동 선택, Spotify 우선, Apple Music 우선
 - 음악 확인 주기 1초, 1.5초, 2.5초, 5초
@@ -184,7 +192,8 @@ readback으로 확인한다. 설정 비활성화와 정상 종료 때 출고 Vol
 - XPAD 노브 미세 볼륨 사용 여부와 한 칸당 실제 출력 단계 수(1·2·3·5)
 - macOS 로그인 시 자동 실행
 
-USB 연결 상태와 LCD 프로토콜 준비 상태는 별도로 표시한다. 설정은 Electron의
+USB 연결 상태, LCD 프로토콜 준비 상태, 노브 적용 상태의 상세 문구와 조회 오류는 설정
+화면에서 확인한다. 설정은 Electron의
 `app.getPath('userData')/config.json`에 저장된다. macOS에서는 일반적으로
 `~/Library/Application Support/xpad-mini-now-playing` 아래에 생성된다.
 

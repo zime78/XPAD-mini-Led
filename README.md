@@ -112,8 +112,10 @@ git에 커밋되는 파일 기준의 워크트리입니다 (생성물 `out/`·`d
 │     ├─ index.html                 # 설정 창 HTML 엔트리
 │     └─ src/
 │        ├─ main.tsx                # React 마운트
-│        ├─ App.tsx                 # 설정 UI (미리보기·연결 상태·표시/노브 설정)
-│        ├─ styles.css              # 설정 창 스타일
+│        ├─ App.tsx                 # IPC 상태 수명주기와 재생/설정 화면 전환
+│        ├─ App.test.tsx            # 공개 UI 동작 테스트
+│        ├─ components/             # 재생 화면과 설정 섹션별 React 컴포넌트
+│        ├─ styles.css              # 재생·설정 화면 스타일과 디자인 토큰
 │        ├─ assets.d.ts             # 에셋 import 타입 선언
 │        └─ env.d.ts                # 환경 타입 선언
 └─ tools/                           # 빌드 없이 실행하는 장치 실험 스크립트 (프로토콜 상수 중복은 의도)
