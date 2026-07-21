@@ -8,6 +8,7 @@ import {
   TrackInfo,
 } from '../shared/types';
 import { loadConfig, saveConfig } from './config';
+import { DiagnosticLog } from './diagnostic-log';
 import { DeviceHost } from './device/device-host';
 import { renderTrackFrame } from './display/frame-renderer';
 import { FineVolumeController } from './input/fine-volume';
@@ -18,6 +19,7 @@ let settingsWindow: BrowserWindow | null = null;
 let config: AppConfig;
 let deviceHost: DeviceHost;
 let fineVolumeController: FineVolumeController;
+let diagnosticLog: DiagnosticLog;
 let monitor: NowPlayingMonitor;
 let currentTrack: TrackInfo = structuredClone(EMPTY_TRACK);
 let previewDataUrl: string | null = null;
@@ -161,7 +163,10 @@ function applyConfig(next: AppConfig): AppConfig {
   monitor.configure(config.servicePreference, config.pollIntervalMs);
   const shortcutsReady =
     !hidDisabled &&
-    fineVolumeController.configure(config.fineVolumeEnabled, config.fineVolumeStepPercent);
+    fineVolumeController.configure(
+      config.fineVolumeEnabled,
+      config.fineVolumeStepsPerDetent
+    );
   if (!hidDisabled) {
     deviceHost.configureKnob(
       config.fineVolumeEnabled && shortcutsReady,
@@ -198,15 +203,28 @@ if (!gotLock) {
   app.whenReady().then(() => {
     app.setName('XPAD Mini Now Playing');
     config = loadConfig();
+    diagnosticLog = new DiagnosticLog(app.getPath('userData'));
+    diagnosticLog.log('app-started', {
+      version: app.getVersion(),
+      packaged: app.isPackaged,
+      hidDisabled,
+    });
     deviceHost = new DeviceHost();
-    fineVolumeController = new FineVolumeController();
+    fineVolumeController = new FineVolumeController(diagnosticLog);
     monitor = new NowPlayingMonitor(
       config.servicePreference,
       config.pollIntervalMs,
       app.getPath('temp')
     );
 
-    deviceHost.on('status', broadcastStatus);
+    deviceHost.on('status', () => {
+      diagnosticLog.log('device-status', {
+        connected: deviceHost.connected,
+        protocolReady: deviceHost.protocolReady,
+        knobFineVolumeState: deviceHost.knobFineVolumeState,
+      });
+      broadcastStatus();
+    });
     deviceHost.on('knob-backup', storeKnobKeymapBackup);
     fineVolumeController.on('status', broadcastStatus);
     monitor.on('change', (track: TrackInfo) => {
@@ -220,7 +238,7 @@ if (!gotLock) {
       !hidDisabled &&
       fineVolumeController.configure(
         config.fineVolumeEnabled,
-        config.fineVolumeStepPercent
+        config.fineVolumeStepsPerDetent
       );
     if (!hidDisabled) {
       deviceHost.start(
@@ -250,7 +268,8 @@ if (!gotLock) {
       if (finished) return;
       finished = true;
       fineVolumeController?.dispose();
-      app.exit(0);
+      diagnosticLog?.log('app-stopped');
+      void (diagnosticLog?.flush() ?? Promise.resolve()).finally(() => app.exit(0));
     };
     setTimeout(finish, 4000);
     void deviceHost?.shutdown().then(finish, finish);

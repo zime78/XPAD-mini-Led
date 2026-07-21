@@ -29,7 +29,7 @@ export interface AppConfig {
   showArtwork: boolean;
   showProgress: boolean;
   fineVolumeEnabled: boolean;
-  fineVolumeStepPercent: number;
+  fineVolumeStepsPerDetent: number;
   knobKeymapBackup?: KnobKeymapBackup;
   launchAtLogin: boolean;
 }
@@ -61,6 +61,6 @@ export const DEFAULT_CONFIG: AppConfig = {
   showArtwork: true,
   showProgress: true,
   fineVolumeEnabled: true,
-  fineVolumeStepPercent: 1,
+  fineVolumeStepsPerDetent: 1,
   launchAtLogin: false,
 };

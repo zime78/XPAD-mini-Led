@@ -25,7 +25,7 @@ macOS의 Spotify와 Apple Music에서 현재 재생 중인 곡을 읽어 Pulsar 
 - Spotify / Apple Music 자동 감지
 - 곡명, 아티스트, 앨범, 재생 상태와 진행률 표시
 - 앨범아트 표시
-- XPAD 노브 좌/우 미세 볼륨 조절(기본 1%, 1·2·3·5% 설정)
+- XPAD 노브 한 칸을 실제 출력 단계와 맞춘 미세 볼륨 조절(한 칸당 1·2·3·5단계 설정)
 - XPAD Mini 자동 재연결
 - 로그인 시 자동 실행 옵션
 - HID 명령 `0x25`를 사용한 RAM 전용 LCD 스트리밍
@@ -51,6 +51,11 @@ HID 충돌 없이 UI와 음악 조회를 디버깅하려면 `./build.sh debug`, 
 DMG를 생성하려면 `./build.sh package all`, 현재 Mac용 앱을 빌드·설치하려면
 `./build.sh deploy host`를 실행합니다. 전체 옵션과 수정·배포 절차는
 [개발 내용 및 검증 보고서](docs/DEVELOPMENT_REPORT.md#7-빌드-디버깅-배포-및-설치)를 참조하십시오.
+
+XPAD 노브 입력 진단 로그는
+`~/Library/Application Support/xpad-mini-now-playing/logs/fine-volume.jsonl`에 JSONL로
+기록됩니다. 노브 방향·요청 단위·조절 전후 볼륨·처리 시간만 저장하며 곡 정보나 장치
+식별자는 기록하지 않습니다. 파일이 1MiB를 넘으면 이전 로그 한 개로 회전합니다.
 
 ## 프로젝트 구조
 
@@ -88,13 +93,14 @@ git에 커밋되는 파일 기준의 워크트리입니다 (생성물 `out/`·`d
 │  │  └─ types.ts                   # 전 프로세스 공용 타입 (TrackInfo, AppConfig 등)
 │  ├─ main/
 │  │  ├─ index.ts                   # 앱 수명 주기·트레이·설정 창·IPC 오케스트레이션
+│  │  ├─ diagnostic-log.ts          # 개인정보 없는 노브 입력·볼륨 적용 JSONL 로그
 │  │  ├─ config.ts                  # userData/config.json 로드·저장·정규화
 │  │  ├─ music/
 │  │  │  └─ now-playing.ts          # AppleScript로 Spotify/Music 폴링·앨범아트 수집
 │  │  ├─ display/
 │  │  │  └─ frame-renderer.ts       # 트랙 정보 → SVG → RGB565 LCD 프레임 렌더링
 │  │  ├─ input/
-│  │  │  └─ fine-volume.ts          # F20/F19 → macOS 출력 볼륨 1~5% 조절
+│  │  │  └─ fine-volume.ts          # F20/F19 → 다음 실제 출력 단계 탐색·조절
 │  │  └─ device/
 │  │     ├─ device-host.ts          # 디바이스 워커 스레드 프록시 (main 쪽)
 │  │     ├─ device-worker.ts        # HID I/O 워커 — 220ms 주기 프레임 스트리밍

@@ -15,6 +15,7 @@ export function loadConfig(): AppConfig {
   if (cached) return cached;
   try {
     const raw = JSON.parse(fs.readFileSync(configPath(), 'utf8')) as Partial<AppConfig>;
+    // 이전 퍼센트/증감값은 의미가 달라 실제 단계 설정으로 승계하지 않는다.
     cached = normalize({ ...DEFAULT_CONFIG, ...raw });
   } catch {
     cached = structuredClone(DEFAULT_CONFIG);
@@ -42,9 +43,9 @@ function normalize(config: AppConfig): AppConfig {
     showArtwork: Boolean(config.showArtwork),
     showProgress: Boolean(config.showProgress),
     fineVolumeEnabled: Boolean(config.fineVolumeEnabled),
-    fineVolumeStepPercent: Math.min(
+    fineVolumeStepsPerDetent: Math.min(
       5,
-      Math.max(1, Math.round(Number(config.fineVolumeStepPercent) || 1))
+      Math.max(1, Math.round(Number(config.fineVolumeStepsPerDetent) || 1))
     ),
     ...(knobKeymapBackup ? { knobKeymapBackup } : {}),
     launchAtLogin: Boolean(config.launchAtLogin),

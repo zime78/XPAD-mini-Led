@@ -202,20 +202,20 @@ export function App() {
           미세 볼륨 조절 사용
         </label>
         <label>
-          한 칸 조절 단위
+          한 칸당 실제 단계
           <select
-            value={config.fineVolumeStepPercent}
+            value={config.fineVolumeStepsPerDetent}
             disabled={!config.fineVolumeEnabled}
             onChange={(event) =>
               patch((draft) => {
-                draft.fineVolumeStepPercent = Number(event.target.value);
+                draft.fineVolumeStepsPerDetent = Number(event.target.value);
               })
             }
           >
-            <option value={1}>1%</option>
-            <option value={2}>2%</option>
-            <option value={3}>3%</option>
-            <option value={5}>5%</option>
+            <option value={1}>1</option>
+            <option value={2}>2</option>
+            <option value={3}>3</option>
+            <option value={5}>5</option>
           </select>
         </label>
         <div className="knob-map" aria-label="XPAD 노브 매핑">
