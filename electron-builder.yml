@@ -1,14 +1,14 @@
-appId: io.github.spinnermaster.xpad-mini-claude-code
-productName: XPAD Mini Claude
-# node-hid and koffi ship prebuilt N-API binaries; no toolchain rebuild needed.
+appId: kr.co.zime.xpad-mini-now-playing
+productName: XPAD Mini Now Playing
+# node-hid ships a prebuilt N-API binary; no toolchain rebuild needed.
 npmRebuild: false
 directories:
   output: dist
 files:
   - out/**
 extraResources:
-  - from: assets
-    to: assets
+  - from: assets/tray
+    to: assets/tray
 win:
   target:
     - nsis
@@ -20,6 +20,7 @@ mac:
   target:
     - target: dmg
       arch: [arm64, x64]
-  category: public.app-category.developer-tools
-  # Unsigned build: open with right-click -> Open the first time (Gatekeeper).
-  identity: null
+  category: public.app-category.music
+  hardenedRuntime: true
+  extendInfo:
+    NSAppleEventsUsageDescription: Spotify와 Apple Music에서 현재 재생 중인 곡 정보를 읽는 데 사용합니다.

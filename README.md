@@ -1,92 +1,164 @@
-# XPAD Mini × Claude Code
+# XPAD Mini Now Playing
 
-Turns a [Pulsar Lab XPAD Mini](https://www.pulsar.gg/products/pulsar-lab-xpad-mini-gaming-key-pad)
-into a status display and control surface for [Claude Code](https://claude.com/claude-code),
-on Windows and macOS.
+macOS의 Spotify와 Apple Music에서 현재 재생 중인 곡을 읽어 Pulsar Lab XPAD Mini의
+240×135 LCD에 표시하는 Electron 트레이 앱입니다.
 
-- **LEDs mirror Claude's state** — a dot circles the light bar and keys
-  while the agent works, flashing red when it needs you, pulsing green when
-  it's done.
-- **Keys** — the app maps the actions straight onto the pad: left types `y`
-  (approve), right types `n` (reject), center holds **Left Ctrl+Left Win**
-  (Wispr Flow's own Windows push-to-talk default — bind your dictation app
-  to that combo, or to `F13` on macOS, where Ctrl+Win isn't available).
-- **LCD** — Clawd the crab reacts to what's happening: typing while Claude
-  works, celebrating on completion, sleeping when idle.
+## 프로젝트 목표
 
-## Status
+- 별도 웹 드라이버(Bibimbap Web DRV) 없이 macOS에서 XPAD Mini LCD를 네이티브 USB HID로 직접 구동합니다.
+- 재생 중인 음악(곡명·아티스트·앨범·앨범아트·진행률)을 책상 위 상시 디스플레이로 보여줍니다.
+- LCD 프레임과 노브 좌/우 매핑은 RAM으로만 전송합니다. 펌웨어·LED·플래시 저장 영역과
+  다른 키는 건드리지 않으며, 앱 종료 시 노브 원본을 복원합니다.
+- 설정 없이 동작합니다 — 음악 앱과 장치를 자동 감지하고, 연결이 끊기면 자동 재연결합니다.
 
-Working end-to-end on Windows with real hardware: Claude Code hooks drive the
-LEDs and LCD live over Pulsar's vendor HID protocol (SayoDevice "API v2",
-reverse-engineered and documented in [docs/PROTOCOL.md](docs/PROTOCOL.md)).
-All device writes are RAM-only — unplugging the pad restores its factory
-behavior. macOS support is implemented but untested. Installers are unsigned:
-on Windows, SmartScreen needs "More info → Run anyway"; on macOS, right-click
-→ Open the first time.
+## 필수 장비
 
-## Setup
+이 앱은 실물 **Pulsar Lab XPAD Mini**(VID `0x3710`, PID `0x2507`)가 USB로 연결되어
+있어야 LCD 표시가 동작합니다. 장비 상세 정보와 구매는 제조사 제품 페이지를 참조하십시오.
 
-1. Install and launch the app (tray icon appears; settings open on first run).
-2. Click **Install hooks** — this merges hook entries into
-   `~/.claude/settings.json` so Claude Code reports its lifecycle events to
-   the app. **Uninstall hooks** removes them cleanly.
-3. That's it — while the app runs, it maps the key actions directly onto the
-   pad over the vendor protocol, RAM-only: the pad itself types `y` / holds
-   Ctrl+Win / types `n`, with zero added latency. Unplugging restores the
-   factory keymap; the app re-applies on reconnect. (To use the pad without
-   the app, you can still remap permanently: hold the volume knob ~2 s →
-   Keymap, or Pulsar's Bibimbap web driver at `bbb.pulsar.gg`.) Key actions
-   aren't exposed in the settings UI — edit `config.json` in the app's data
-   directory if you want different ones.
-4. Optional: adjust LED colors/effects and brightness in the settings UI.
+- [Pulsar Lab XPAD Mini — 제조사(Pulsar) 제품 페이지](https://us.pulsar.gg/products/pulsar-lab-xpad-mini-gaming-key-pad)
 
-## Development
+장치가 없어도 `./build.sh dev-ui`(HID 비활성)로 설정 UI와 음악 조회 기능까지는 실행해 볼 수 있습니다.
+
+## 기능
+
+- Spotify / Apple Music 자동 감지
+- 곡명, 아티스트, 앨범, 재생 상태와 진행률 표시
+- 앨범아트 표시
+- XPAD 노브 좌/우 미세 볼륨 조절(기본 1%, 1·2·3·5% 설정)
+- XPAD Mini 자동 재연결
+- 로그인 시 자동 실행 옵션
+- HID 명령 `0x25`를 사용한 RAM 전용 LCD 스트리밍
+- `0x10` KeyInfo를 사용한 Profile 1 노브 좌/우 RAM 임시 매핑과 종료 시 원복
+
+일반 Mac 키보드 볼륨키, XPAD 노브 클릭(Mute), 다른 XPAD 키, 펌웨어, LED 설정,
+장치 플래시 저장 영역은 변경하지 않습니다. 앱이 종료되면 노브는 원래 Vol-/Vol+로
+복원되고 장치의 기본 화면이 다시 그려집니다.
+
+## 개발
 
 ```sh
-npm install
-npm run gen-icons   # tray icons
-node tools/gen-clawd.js  # built-in procedural Clawd LCD frames
-npm run dev         # run with hot reload
-npm run build       # production build into out/
+./build.sh deps
+./build.sh dev
+./build.sh check
 ```
 
-### Optional: pixel-art Clawd animations
+처음 실행할 때 macOS가 Spotify 또는 Music 제어 권한을 요청할 수 있습니다. 이 권한은
+재생 정보를 읽는 데만 사용합니다.
 
-The LCD can play the lovely pixel-art Clawd animations from
-[KebeliSamet0/clawd](https://github.com/KebeliSamet0/clawd):
+HID 충돌 없이 UI와 음악 조회를 디버깅하려면 `./build.sh debug`, 실제 장치까지
+디버깅하려면 설치 앱을 종료한 다음 `./build.sh debug-hid`를 사용합니다. 개인 인증서로
+DMG를 생성하려면 `./build.sh package all`, 현재 Mac용 앱을 빌드·설치하려면
+`./build.sh deploy host`를 실행합니다. 전체 옵션과 수정·배포 절차는
+[개발 내용 및 검증 보고서](docs/DEVELOPMENT_REPORT.md#7-빌드-디버깅-배포-및-설치)를 참조하십시오.
 
-```sh
-node tools/import-clawd-gifs.js
+## 프로젝트 구조
+
+git에 커밋되는 파일 기준의 워크트리입니다 (생성물 `out/`·`dist/`·`node_modules/` 등은 제외).
+
+```
+.
+├─ AGENTS.md                        # 에이전트 공용 저장소 지침 (아키텍처·안전 경계·규칙)
+├─ CLAUDE.md                        # Claude Code 진입점 — AGENTS.md를 import
+├─ LICENSE                          # MIT 라이선스
+├─ README.md                        # 이 문서
+├─ build.sh                         # 빌드·디버깅·서명·배포 통합 스크립트 (표준 진입점)
+├─ electron-builder.yml             # DMG 패키징 설정 (appId, Hardened Runtime)
+├─ electron.vite.config.ts          # main/preload/renderer + device-worker 번들 설정
+├─ package.json                     # npm 메타데이터·스크립트·의존성
+├─ package-lock.json                # 의존성 잠금
+├─ tsconfig.json                    # TypeScript 프로젝트 참조 루트
+├─ tsconfig.node.json               # main/preload용 TS 설정 (strict)
+├─ tsconfig.web.json                # renderer용 TS 설정 (strict)
+├─ .gitignore                       # 생성물·로컬 상태·인증서·재배포 불가 에셋 제외
+├─ .github/
+│  └─ workflows/build.yml           # macOS 타입 검사·빌드·런타임 의존성 감사
+├─ build/
+│  └─ icon.png                      # 앱 아이콘 원본 (electron-builder가 icns/ico로 변환)
+├─ assets/
+│  ├─ tray/                         # 상태별 트레이 아이콘 (재생·일시정지·대기, 앱에 번들)
+│  └─ clawd/                        # 이전 세대 LCD 애니메이션 프레임 (잔재, 현재 앱 미사용)
+├─ docs/
+│  ├─ README.md                     # 기술 문서 인덱스
+│  ├─ DEVELOPMENT_REPORT.md         # 개발 내용·검증 결과·빌드/배포 절차 종합 보고서
+│  ├─ XPAD_MINI_DIRECT_API.md       # 직접 연결·전체 제어 기능·위험도 가이드
+│  ├─ PROTOCOL.md                   # 실기기 검증 저수준 HID 프로토콜 (권위 문서)
+├─ src/
+│  ├─ shared/
+│  │  └─ types.ts                   # 전 프로세스 공용 타입 (TrackInfo, AppConfig 등)
+│  ├─ main/
+│  │  ├─ index.ts                   # 앱 수명 주기·트레이·설정 창·IPC 오케스트레이션
+│  │  ├─ config.ts                  # userData/config.json 로드·저장·정규화
+│  │  ├─ music/
+│  │  │  └─ now-playing.ts          # AppleScript로 Spotify/Music 폴링·앨범아트 수집
+│  │  ├─ display/
+│  │  │  └─ frame-renderer.ts       # 트랙 정보 → SVG → RGB565 LCD 프레임 렌더링
+│  │  ├─ input/
+│  │  │  └─ fine-volume.ts          # F20/F19 → macOS 출력 볼륨 1~5% 조절
+│  │  └─ device/
+│  │     ├─ device-host.ts          # 디바이스 워커 스레드 프록시 (main 쪽)
+│  │     ├─ device-worker.ts        # HID I/O 워커 — 220ms 주기 프레임 스트리밍
+│  │     ├─ hid.ts                  # XPAD Mini bulk 채널 열기·자동 재연결
+│  │     └─ protocol.ts             # ScreenInfo 0x02, 노브 KeyInfo 0x10, Display 0x25
+│  ├─ preload/
+│  │  └─ index.ts                   # contextBridge — window.xpad IPC API 노출
+│  └─ renderer/
+│     ├─ index.html                 # 설정 창 HTML 엔트리
+│     └─ src/
+│        ├─ main.tsx                # React 마운트
+│        ├─ App.tsx                 # 설정 UI (미리보기·연결 상태·표시/노브 설정)
+│        ├─ styles.css              # 설정 창 스타일
+│        ├─ assets.d.ts             # 에셋 import 타입 선언
+│        └─ env.d.ts                # 환경 타입 선언
+└─ tools/                           # 빌드 없이 실행하는 장치 실험 스크립트 (프로토콜 상수 중복은 의도)
+   ├─ hid-enum.js                   # XPAD Mini HID 인터페이스 열거
+   ├─ probe-screeninfo.js           # ScreenInfo(0x02) 읽기 전용 프로브
+   ├─ probe-cmd.js                  # 임의 v2 명령 읽기 전용 프로브
+   ├─ probe-v1.js                   # API v1 채널(0xFF00) 읽기 전용 프로브
+   ├─ readback.js                   # LCD 프레임버퍼 리드백 검증
+   ├─ sweep-diff.js                 # 펌웨어 애니메이션 중 명령 응답 변화 관찰
+   ├─ led-demo.js                   # LED 인덱스 매핑 데모 (이전 세대)
+   ├─ test-leds.js                  # LED 쓰기(0x27) 테스트, RAM 전용 (이전 세대)
+   ├─ identify-leds.js              # LED 물리 위치 식별 실험 1 (이전 세대)
+   ├─ identify-leds2.js             # LED 물리 위치 식별 실험 2 (이전 세대)
+   ├─ probe-key-leds.js             # 키 LED 명령 탐색, RAM 전용 (이전 세대)
+   ├─ probe-extra-leds.js           # 13개 초과 LED 존재 여부 프로브 (이전 세대)
+   ├─ stream-clawd.js               # LCD 애니메이션 스트리밍 테스트 (이전 세대)
+   ├─ gen-clawd.js                  # Clawd 애니메이션 프레임 생성 (이전 세대)
+   ├─ import-clawd-gifs.js          # 외부 Clawd GIF 로컬 임포트 (이전 세대, 산출물 커밋 금지)
+   ├─ gen-app-icon.js               # build/icon.png 앱 아이콘 생성
+   ├─ gen-tray-icons.js             # assets/tray 트레이 아이콘 생성
+   └─ test-input-ffi.js             # Windows 입력 FFI 검증 (이전 세대)
 ```
 
-This downloads the GIFs and converts them into `assets/clawd-external/`
-(gitignored) and into a per-user directory (`%APPDATA%\xpad-mini-claude-code\
-clawd-external` on Windows, `~/Library/Application Support/xpad-mini-claude-code/
-clawd-external` on macOS) that installed builds read too — so the import
-survives app updates and reinstalls. **That artwork is All-Rights-Reserved
-fan art of Anthropic's Clawd** — it is imported locally for personal use only
-and must never be committed or redistributed with this project. Without the import, the app uses
-its built-in (original, committed) procedural animations. Note that a locally
-built installer (`npm run dist`) bundles `assets/` — including the imported
-art — so never share locally built installers; the CI/release builds contain
-only the procedural set.
+## macOS 설치
 
-## How it works
+- Apple Silicon: `dist/XPAD Mini Now Playing-0.1.0-arm64.dmg`
+- Intel Mac: `dist/XPAD Mini Now Playing-0.1.0.dmg`
+- 설치 위치: `/Applications/XPAD Mini Now Playing.app`
 
-1. The app runs in the tray and serves HTTP on `127.0.0.1:3939`.
-2. "Install hooks" merges hook entries into `~/.claude/settings.json` that
-   `curl` each Claude Code lifecycle event (`UserPromptSubmit`, `PreToolUse`,
-   `Notification`, `Stop`, ...) to the app.
-3. A per-session state machine aggregates sessions into one state
-   (attention > working > done > idle) that drives the tray icon, LEDs, and LCD.
-4. Pad keys are remapped on the device to F13/F14/F15; the app registers them
-   as global shortcuts and performs the configured action. Approve/Reject only
-   fire when the focused app is a terminal/IDE from the allowlist.
+배포 앱과 DMG는 개인 `Developer ID Application` 인증서로 서명하며 Hardened Runtime을
+사용합니다. XPAD Mini가 키보드를 포함한 복합 HID이므로 최초 직접 연결 시
+`시스템 설정 → 개인정보 보호 및 보안 → 입력 모니터링`에서 앱을 허용해야 합니다.
+Bibimbap Web DRV나 다른 HID 도구와 동시에 연결하지 마십시오.
 
-## Device
+## 기술 문서
 
-Pulsar Lab XPAD Mini: VID `0x3710`, PID `0x2507`. 3 magnetic keys, volume
-knob, 2 tactile buttons, 10 backlight + 3 key RGB LEDs, 240×135 LCD
-(marketing says 136; the firmware reports 135).
-Configured officially via Pulsar's Bibimbap web driver (`bbb.pulsar.gg`, the
-`/sKey` Flutter app).
+- [현재 개발 내용 및 검증 보고서](docs/DEVELOPMENT_REPORT.md)
+- [XPAD Mini 직접 연결 및 제어 기능 전체 가이드](docs/XPAD_MINI_DIRECT_API.md)
+- [저수준 HID 프로토콜](docs/PROTOCOL.md)
+- [문서 인덱스](docs/README.md)
+
+## 장치
+
+- Pulsar Lab XPAD Mini — [제조사 제품 페이지](https://us.pulsar.gg/products/pulsar-lab-xpad-mini-gaming-key-pad)
+- VID `0x3710`, PID `0x2507`
+- Vendor HID bulk usage page `0xFF12`
+- LCD `240×135`, RGB565 little-endian
+
+## 출처와 라이선스
+
+이 프로젝트는 MIT 라이선스의
+[`SpinnerMaster/xpad-mini-claude-code`](https://github.com/SpinnerMaster/xpad-mini-claude-code)에
+포함된 XPAD Mini HID 프로토콜 구현을 기반으로 합니다. 프로토콜 역분석 근거는
+[`docs/PROTOCOL.md`](docs/PROTOCOL.md)에 보존되어 있습니다.

@@ -1,87 +1,58 @@
 import { EventEmitter } from 'node:events';
 import path from 'node:path';
 import { Worker } from 'node:worker_threads';
-import { ClaudeState, HidTarget, KeyRoles, StateStyle } from '../../shared/types';
+import type {
+  KnobFineVolumeState,
+  KnobKeymapBackup,
+} from '../../shared/types';
 import type { WorkerInMessage, WorkerOutMessage } from './device-worker';
-import type { ClawdRole } from './lcd-engine';
 
-/**
- * Main-thread proxy for the device worker. All XPAD I/O and animation timing
- * happens in the worker; this class just forwards commands and re-emits
- * status ('status' event) for the tray/UI.
- */
 export class DeviceHost extends EventEmitter {
   private worker: Worker | null = null;
   connected = false;
   protocolReady = false;
+  knobFineVolumeState: KnobFineVolumeState = 'disabled';
+  knobFineVolumeError: string | null = null;
+  knobKeymapBackup: KnobKeymapBackup | undefined;
 
-  start(
-    assetRoot: string,
-    externalDir: string,
-    states: Record<ClaudeState, StateStyle>,
-    keyRoles: KeyRoles,
-    ledBrightness: number,
-    padAutoRemap: boolean,
-    padKeyTargets: (HidTarget | null)[]
-  ): void {
+  start(enabled: boolean, backup?: KnobKeymapBackup): void {
     this.worker = new Worker(path.join(__dirname, 'device-worker.js'), {
-      workerData: {
-        assetRoot,
-        externalDir,
-        states,
-        keyRoles,
-        ledBrightness,
-        padAutoRemap,
-        padKeyTargets,
-      },
+      workerData: { enabled, backup },
     });
-    this.worker.on('message', (msg: WorkerOutMessage) => {
-      if (msg.type === 'status') {
-        this.connected = msg.connected;
-        this.protocolReady = msg.protocolReady;
-        this.emit('status');
+    this.worker.on('message', (message: WorkerOutMessage) => {
+      if (message.type !== 'status') return;
+      const previousBackup = JSON.stringify(this.knobKeymapBackup);
+      this.connected = message.connected;
+      this.protocolReady = message.protocolReady;
+      this.knobFineVolumeState = message.knobFineVolumeState;
+      this.knobFineVolumeError = message.knobFineVolumeError;
+      this.knobKeymapBackup = message.knobKeymapBackup;
+      if (
+        this.knobKeymapBackup &&
+        JSON.stringify(this.knobKeymapBackup) !== previousBackup
+      ) {
+        this.emit('knob-backup', this.knobKeymapBackup);
       }
+      this.emit('status');
     });
-    this.worker.on('error', (err) => {
-      console.error('[device-host] worker error', err);
-    });
+    this.worker.on('error', (error) => console.error('[device-host] worker error', error));
     this.worker.on('exit', (code) => {
       if (code !== 0) console.error(`[device-host] worker exited with ${code}`);
       this.connected = false;
       this.protocolReady = false;
+      this.knobFineVolumeState = 'disabled';
       this.emit('status');
     });
   }
 
-  setState(state: ClaudeState): void {
-    this.send({ type: 'setState', state });
+  setFrame(frame: Buffer): void {
+    this.send({ type: 'setFrame', frame });
   }
 
-  oneShot(role: Extract<ClawdRole, 'approve' | 'reject' | 'dictation'>): void {
-    this.send({ type: 'oneShot', role });
+  configureKnob(enabled: boolean, backup?: KnobKeymapBackup): void {
+    this.send({ type: 'configureKnob', enabled, backup });
   }
 
-  applyConfig(
-    states: Record<ClaudeState, StateStyle>,
-    keyRoles: KeyRoles,
-    ledBrightness: number,
-    padAutoRemap: boolean,
-    padKeyTargets: (HidTarget | null)[]
-  ): void {
-    this.send({
-      type: 'applyConfig',
-      states,
-      keyRoles,
-      ledBrightness,
-      padAutoRemap,
-      padKeyTargets,
-    });
-  }
-
-  /**
-   * Asks the worker to blank the pad and exit; resolves once it has. The
-   * caller should bound this with a timeout in case the worker is wedged.
-   */
   shutdown(): Promise<void> {
     const worker = this.worker;
     this.worker = null;
@@ -96,11 +67,11 @@ export class DeviceHost extends EventEmitter {
     });
   }
 
-  private send(msg: WorkerInMessage): void {
+  private send(message: WorkerInMessage): void {
     try {
-      this.worker?.postMessage(msg);
-    } catch (err) {
-      console.error('[device-host] postMessage failed', err);
+      this.worker?.postMessage(message);
+    } catch (error) {
+      console.error('[device-host] postMessage failed', error);
     }
   }
 }

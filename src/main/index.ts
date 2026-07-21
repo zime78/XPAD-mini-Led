@@ -2,81 +2,57 @@ import { app, BrowserWindow, ipcMain, Menu, nativeImage, Tray } from 'electron';
 import path from 'node:path';
 import {
   AppConfig,
-  ClaudeState,
-  deriveKeyRoles,
+  EMPTY_TRACK,
+  KnobKeymapBackup,
   StatusSnapshot,
+  TrackInfo,
 } from '../shared/types';
 import { loadConfig, saveConfig } from './config';
-import { chordToHidTarget } from './input/send-keys';
-import type { HidTarget } from '../shared/types';
-import { HookServer } from './claude/hook-server';
-import {
-  areHooksInstalled,
-  installHooks,
-  uninstallHooks,
-} from './claude/hook-installer';
-import { ClaudeStateMachine } from './claude/state-machine';
 import { DeviceHost } from './device/device-host';
-import { HotkeyManager } from './input/hotkeys';
+import { renderTrackFrame } from './display/frame-renderer';
+import { FineVolumeController } from './input/fine-volume';
+import { NowPlayingMonitor } from './music/now-playing';
 
 let tray: Tray | null = null;
 let settingsWindow: BrowserWindow | null = null;
-
 let config: AppConfig;
-let stateMachine: ClaudeStateMachine;
-let hookServer: HookServer;
 let deviceHost: DeviceHost;
-let hotkeys: HotkeyManager;
+let fineVolumeController: FineVolumeController;
+let monitor: NowPlayingMonitor;
+let currentTrack: TrackInfo = structuredClone(EMPTY_TRACK);
+let previewDataUrl: string | null = null;
+let renderSequence = 0;
+let pendingRender: { sequence: number; track: TrackInfo; config: AppConfig } | null = null;
+let rendering = false;
+const hidDisabled = process.env.XPAD_DISABLE_HID === '1';
 
-const KEY_IDS = ['left', 'center', 'right'] as const;
-/** Fallback emission per pad key for app-intercepted actions: F14/F13/F15. */
-const FALLBACK_USAGE = { left: 0x69, center: 0x68, right: 0x6a } as const;
-
-/**
- * What each pad key should emit BY ITSELF (on-device mapping): the action's
- * own chord when the keyboard page can express it (smooth — no app
- * round-trip), else the fallback F-key which the app intercepts as a global
- * shortcut.
- */
-function deriveKeyTargets(cfg: AppConfig): (HidTarget | null)[] {
-  return KEY_IDS.map((keyId) => {
-    const fallback: HidTarget = { mod: 0, key: FALLBACK_USAGE[keyId] };
-    const action = cfg.keys[keyId];
-    if (action.type === 'command') return fallback;
-    if (action.type === 'none') return fallback; // inert pass-through
-    return (action.keys ? chordToHidTarget(action.keys) : null) ?? fallback;
-  });
-}
-
-/** Keys whose action still needs the app's global shortcut + synthesizer. */
-function deriveAppHandledKeys(cfg: AppConfig): ('left' | 'center' | 'right')[] {
-  return KEY_IDS.filter((keyId) => {
-    const action = cfg.keys[keyId];
-    if (action.type === 'none') return false;
-    if (action.type === 'command') return true;
-    return !action.keys || chordToHidTarget(action.keys) === null;
-  });
-}
-
-function assetPath(...parts: string[]): string {
-  const root = app.isPackaged
-    ? process.resourcesPath
-    : path.join(__dirname, '../..');
+function resourcePath(...parts: string[]): string {
+  const root = app.isPackaged ? process.resourcesPath : path.join(__dirname, '../..');
   return path.join(root, 'assets', ...parts);
 }
 
-function trayIconFor(state: ClaudeState) {
-  return nativeImage.createFromPath(assetPath('tray', `${state}.png`));
+function trayIcon(): Electron.NativeImage {
+  const name =
+    currentTrack.state === 'playing'
+      ? 'working.png'
+      : currentTrack.state === 'paused'
+        ? 'attention.png'
+        : 'idle.png';
+  return nativeImage.createFromPath(resourcePath('tray', name));
 }
 
 function currentStatus(): StatusSnapshot {
+  const fineVolumeError = fineVolumeController?.lastError ?? null;
   return {
-    aggregateState: stateMachine.aggregateState,
-    sessions: stateMachine.snapshots,
-    deviceConnected: deviceHost.connected,
-    protocolReady: deviceHost.protocolReady,
-    hookServerPort: hookServer.port,
-    hooksInstalled: areHooksInstalled(config.port),
+    deviceConnected: deviceHost?.connected ?? false,
+    protocolReady: deviceHost?.protocolReady ?? false,
+    track: currentTrack,
+    monitorError: monitor?.lastError ?? null,
+    previewDataUrl,
+    knobFineVolumeState: fineVolumeError
+      ? 'error'
+      : (deviceHost?.knobFineVolumeState ?? 'disabled'),
+    knobFineVolumeError: fineVolumeError ?? deviceHost?.knobFineVolumeError ?? null,
   };
 }
 
@@ -88,20 +64,26 @@ function broadcastStatus(): void {
 
 function updateTray(status: StatusSnapshot): void {
   if (!tray) return;
-  tray.setImage(trayIconFor(status.aggregateState));
-  const bits = [
-    `Claude: ${status.aggregateState}`,
-    status.deviceConnected ? 'XPAD connected' : 'XPAD not found',
-  ];
-  tray.setToolTip(`XPAD Mini × Claude Code — ${bits.join(', ')}`);
+  tray.setImage(trayIcon());
+  const playback =
+    status.track.state === 'playing'
+      ? `${status.track.title} — ${status.track.artist}`
+      : status.track.state === 'paused'
+        ? `일시 정지: ${status.track.title}`
+        : '재생 중인 음악 없음';
+  tray.setToolTip(`XPAD Mini Now Playing — ${playback}`);
   tray.setContextMenu(
     Menu.buildFromTemplate([
-      { label: bits[0], enabled: false },
-      { label: bits[1], enabled: false },
+      { label: playback, enabled: false },
+      {
+        label: status.protocolReady ? 'XPAD Mini 연결됨' : 'XPAD Mini 연결 대기 중',
+        enabled: false,
+      },
       { type: 'separator' },
-      { label: 'Settings…', click: () => openSettingsWindow() },
+      { label: '지금 새로고침', click: () => void monitor.refresh() },
+      { label: '설정…', click: () => openSettingsWindow() },
       { type: 'separator' },
-      { label: 'Quit', click: () => app.quit() },
+      { label: '종료', click: () => app.quit() },
     ])
   );
 }
@@ -113,9 +95,11 @@ function openSettingsWindow(): void {
     return;
   }
   settingsWindow = new BrowserWindow({
-    width: 900,
-    height: 700,
-    title: 'XPAD Mini × Claude Code',
+    width: 760,
+    height: 690,
+    minWidth: 680,
+    minHeight: 620,
+    title: 'XPAD Mini Now Playing',
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
@@ -131,45 +115,77 @@ function openSettingsWindow(): void {
   }
 }
 
-function applyConfig(next: AppConfig): void {
-  const prevPort = config?.port;
-  config = next;
-  stateMachine.setDoneDecaySeconds(next.doneDecaySeconds);
-  deviceHost.applyConfig(
-    next.states,
-    deriveKeyRoles(next.keys),
-    next.ledBrightness,
-    next.padAutoRemap,
-    deriveKeyTargets(next)
-  );
-  hotkeys.apply(next, deriveAppHandledKeys(next));
-  app.setLoginItemSettings({ openAtLogin: next.launchAtLogin });
-  if (prevPort !== undefined && prevPort !== next.port) {
-    void hookServer.start(next.port).catch((err) => {
-      console.error('[hook-server] restart failed', err);
-    });
+function renderAndSend(track: TrackInfo): void {
+  const sequence = ++renderSequence;
+  pendingRender = {
+    sequence,
+    track: structuredClone(track),
+    config: structuredClone(config),
+  };
+  if (!rendering) void drainRenderQueue();
+}
+
+async function drainRenderQueue(): Promise<void> {
+  rendering = true;
+  try {
+    while (pendingRender) {
+      const job = pendingRender;
+      pendingRender = null;
+      try {
+        const rendered = await renderTrackFrame(job.track, job.config);
+        if (job.sequence !== renderSequence) continue;
+        previewDataUrl = rendered.previewDataUrl;
+        if (!hidDisabled) deviceHost.setFrame(rendered.rgb565);
+      } catch (error) {
+        if (job.sequence !== renderSequence) continue;
+        console.error('[display] render failed', error);
+        previewDataUrl = null;
+      }
+      broadcastStatus();
+    }
+  } finally {
+    rendering = false;
+    if (pendingRender) void drainRenderQueue();
   }
+}
+
+function configureLoginItem(): void {
+  if (app.isPackaged && !hidDisabled) {
+    app.setLoginItemSettings({ openAtLogin: config.launchAtLogin });
+  }
+}
+
+function applyConfig(next: AppConfig): AppConfig {
+  const knobKeymapBackup = next.knobKeymapBackup ?? config.knobKeymapBackup;
+  config = saveConfig({ ...next, knobKeymapBackup });
+  monitor.configure(config.servicePreference, config.pollIntervalMs);
+  const shortcutsReady =
+    !hidDisabled &&
+    fineVolumeController.configure(config.fineVolumeEnabled, config.fineVolumeStepPercent);
+  if (!hidDisabled) {
+    deviceHost.configureKnob(
+      config.fineVolumeEnabled && shortcutsReady,
+      config.knobKeymapBackup
+    );
+  }
+  configureLoginItem();
+  renderAndSend(currentTrack);
   broadcastStatus();
+  return config;
+}
+
+function storeKnobKeymapBackup(backup: KnobKeymapBackup): void {
+  if (JSON.stringify(config.knobKeymapBackup) === JSON.stringify(backup)) return;
+  config = saveConfig({ ...config, knobKeymapBackup: backup });
 }
 
 function registerIpc(): void {
   ipcMain.handle('get-status', () => currentStatus());
   ipcMain.handle('get-config', () => config);
-  ipcMain.handle('set-config', (_e, next: AppConfig) => {
-    applyConfig(saveConfig(next));
-    return config;
-  });
-  ipcMain.handle('simulate-state', (_e, state: ClaudeState) => {
-    stateMachine.simulate(state);
-  });
-  ipcMain.handle('install-hooks', () => {
-    const result = installHooks(config.port);
-    broadcastStatus();
-    return result;
-  });
-  ipcMain.handle('uninstall-hooks', () => {
-    uninstallHooks();
-    broadcastStatus();
+  ipcMain.handle('set-config', (_event, next: AppConfig) => applyConfig(next));
+  ipcMain.handle('refresh-now-playing', async () => {
+    await monitor.refresh();
+    return currentStatus();
   });
 }
 
@@ -179,76 +195,64 @@ if (!gotLock) {
 } else {
   app.on('second-instance', () => openSettingsWindow());
 
-  app.whenReady().then(async () => {
+  app.whenReady().then(() => {
+    app.setName('XPAD Mini Now Playing');
     config = loadConfig();
-
-    stateMachine = new ClaudeStateMachine(config.doneDecaySeconds);
-    hookServer = new HookServer(stateMachine);
     deviceHost = new DeviceHost();
-    hotkeys = new HotkeyManager();
-    hotkeys.onKeyPress((keyId, executed) => {
-      if (!executed) return;
-      const type = config.keys[keyId].type;
-      if (type === 'approve') deviceHost.oneShot('approve');
-      else if (type === 'reject') deviceHost.oneShot('reject');
-      else if (type === 'hotkey') deviceHost.oneShot('dictation');
-    });
+    fineVolumeController = new FineVolumeController();
+    monitor = new NowPlayingMonitor(
+      config.servicePreference,
+      config.pollIntervalMs,
+      app.getPath('temp')
+    );
 
-    stateMachine.on('change', (state: ClaudeState) => {
-      deviceHost.setState(state);
-      broadcastStatus();
-    });
     deviceHost.on('status', broadcastStatus);
+    deviceHost.on('knob-backup', storeKnobKeymapBackup);
+    fineVolumeController.on('status', broadcastStatus);
+    monitor.on('change', (track: TrackInfo) => {
+      currentTrack = track;
+      renderAndSend(track);
+    });
+    monitor.on('status', broadcastStatus);
 
     registerIpc();
-
-    tray = new Tray(trayIconFor('idle'));
-    tray.on('double-click', () => openSettingsWindow());
-
-    // Shared per-user art dir (fixed name on purpose: dev and packaged apps
-    // have different userData names, but must read the same imported art).
-    const externalArtDir = path.join(
-      app.getPath('appData'),
-      'xpad-mini-claude-code',
-      'clawd-external'
-    );
-    deviceHost.start(
-      assetPath(),
-      externalArtDir,
-      config.states,
-      deriveKeyRoles(config.keys),
-      config.ledBrightness,
-      config.padAutoRemap,
-      deriveKeyTargets(config)
-    );
-    hotkeys.apply(config, deriveAppHandledKeys(config));
-    try {
-      await hookServer.start(config.port);
-      console.log(`[hook-server] listening on 127.0.0.1:${config.port}`);
-    } catch (err) {
-      console.error('[hook-server] failed to start', err);
+    const shortcutsReady =
+      !hidDisabled &&
+      fineVolumeController.configure(
+        config.fineVolumeEnabled,
+        config.fineVolumeStepPercent
+      );
+    if (!hidDisabled) {
+      deviceHost.start(
+        config.fineVolumeEnabled && shortcutsReady,
+        config.knobKeymapBackup
+      );
     }
-
-    broadcastStatus();
-    // Tray app: keep running with no windows. Show settings on first launch
-    // so there's something visible.
+    tray = new Tray(trayIcon());
+    tray.on('double-click', () => openSettingsWindow());
+    configureLoginItem();
+    renderAndSend(currentTrack);
+    monitor.start();
     openSettingsWindow();
   });
 
-  // Tray app: don't quit when the settings window closes.
+  app.on('activate', () => openSettingsWindow());
   app.on('window-all-closed', () => {});
 
-  // Hold quit until the worker has blanked the pad (bounded so a wedged
-  // worker can't hang exit).
   let shuttingDown = false;
   app.on('will-quit', (event) => {
     if (shuttingDown) return;
     shuttingDown = true;
     event.preventDefault();
-    hotkeys?.unregisterAll();
-    void hookServer?.stop();
-    const finish = () => app.exit(0);
-    setTimeout(finish, 1500);
-    deviceHost?.shutdown().then(finish, finish);
+    monitor?.stop();
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      fineVolumeController?.dispose();
+      app.exit(0);
+    };
+    setTimeout(finish, 4000);
+    void deviceHost?.shutdown().then(finish, finish);
   });
 }

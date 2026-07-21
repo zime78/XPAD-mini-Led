@@ -1,7 +1,7 @@
 {
-  "name": "xpad-mini-claude-code",
-  "version": "0.1.5",
-  "description": "Pulsar Lab XPAD Mini companion for Claude Code — LED status, LCD Clawd animations, and approve/reject keys",
+  "name": "xpad-mini-now-playing",
+  "version": "0.1.0",
+  "description": "Spotify and Apple Music now-playing display for the Pulsar Lab XPAD Mini LCD",
   "main": "./out/main/index.js",
   "author": "SpinnerMaster",
   "license": "MIT",
@@ -10,11 +10,9 @@
     "build": "electron-vite build",
     "start": "electron-vite preview",
     "typecheck": "tsc -p tsconfig.node.json && tsc -p tsconfig.web.json",
-    "gen-icons": "node tools/gen-tray-icons.js",
     "dist": "electron-vite build && electron-builder"
   },
   "dependencies": {
-    "koffi": "^3.1.1",
     "node-hid": "^3.4.0",
     "pngjs": "^7.0.0"
   },
@@ -27,8 +25,6 @@
     "electron": "^43.1.1",
     "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
-    "gifenc": "^1.0.3",
-    "omggif": "^1.0.10",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "typescript": "^7.0.2",

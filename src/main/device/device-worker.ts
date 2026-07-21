@@ -1,33 +1,17 @@
-/**
- * Device worker thread: owns all XPAD Mini HID I/O and both animation
- * engines, keeping their timing off the (busy) Electron main thread so LED
- * and LCD animations stay smooth.
- *
- * Spawned by DeviceHost with workerData { assetRoot }.
- */
 import { parentPort, workerData } from 'node:worker_threads';
-import { ClaudeState, HidTarget, KeyRoles, StateStyle } from '../../shared/types';
+import type {
+  KnobFineVolumeState,
+  KnobKeymapBackup,
+} from '../../shared/types';
 import { XpadDevice } from './hid';
-import {
-  BACKLIGHT_COUNT,
-  KEY_LED_COUNT,
-  LCD_HEIGHT,
-  LCD_WIDTH,
-  XpadProtocol,
-} from './protocol';
-import { LedEngine } from './led-engine';
-import { ClawdRole, LcdEngine } from './lcd-engine';
+import { XpadProtocol } from './protocol';
 
 export type WorkerInMessage =
-  | { type: 'setState'; state: ClaudeState }
-  | { type: 'oneShot'; role: Extract<ClawdRole, 'approve' | 'reject' | 'dictation'> }
+  | { type: 'setFrame'; frame: Uint8Array }
   | {
-      type: 'applyConfig';
-      states: Record<ClaudeState, StateStyle>;
-      keyRoles: KeyRoles;
-      ledBrightness: number;
-      padAutoRemap: boolean;
-      padKeyTargets: (HidTarget | null)[];
+      type: 'configureKnob';
+      enabled: boolean;
+      backup?: KnobKeymapBackup;
     }
   | { type: 'shutdown' };
 
@@ -35,123 +19,135 @@ export interface WorkerOutMessage {
   type: 'status';
   connected: boolean;
   protocolReady: boolean;
+  knobFineVolumeState: KnobFineVolumeState;
+  knobFineVolumeError: string | null;
+  knobKeymapBackup?: KnobKeymapBackup;
 }
 
 const port = parentPort;
 if (!port) throw new Error('device-worker must run in a worker thread');
 
-const {
-  assetRoot,
-  externalDir,
-  states,
-  keyRoles,
-  ledBrightness,
-  padAutoRemap,
-  padKeyTargets,
-} = workerData as {
-  assetRoot: string;
-  externalDir: string;
-  states: Record<ClaudeState, StateStyle>;
-  keyRoles: KeyRoles;
-  ledBrightness: number;
-  padAutoRemap: boolean;
-  padKeyTargets: (HidTarget | null)[];
-};
-
 const device = new XpadDevice();
 const protocol = new XpadProtocol(device);
-const ledEngine = new LedEngine(protocol, states);
-const lcdEngine = new LcdEngine(protocol, assetRoot, externalDir);
-
-ledEngine.setKeyRoles(keyRoles);
-ledEngine.setBrightness(ledBrightness);
-lcdEngine.loadAssets();
-
-let autoRemap = padAutoRemap;
-let keyTargets = padKeyTargets;
-// Map the pad keys to their configured emissions on every (re)connect,
-// RAM-only. Engines pause during the reads: concurrent LED/LCD streaming
-// garbles responses.
-protocol.onReady = () => {
-  if (!autoRemap) return;
-  ledEngine.stop();
-  lcdEngine.stop();
-  void protocol
-    .remapPadKeys(keyTargets)
-    .catch((err) => console.error('[worker] pad remap failed', err))
-    .finally(() => {
-      ledEngine.start();
-      lcdEngine.start();
-    });
+const initialKnobConfig = workerData as {
+  enabled: boolean;
+  backup?: KnobKeymapBackup;
 };
+let currentFrame: Buffer | null = null;
+let timer: NodeJS.Timeout | null = null;
+let epoch = 0;
+let streamingPaused = false;
+let knobEnabled = initialKnobConfig.enabled;
+let knobBackup = initialKnobConfig.backup;
+let knobFineVolumeState: KnobFineVolumeState = knobEnabled ? 'pending' : 'disabled';
+let knobFineVolumeError: string | null = null;
+let knobConfigVersion = 0;
+let knobQueue = Promise.resolve();
 
-let lastStatus = '';
 function reportStatus(): void {
-  const msg: WorkerOutMessage = {
+  port!.postMessage({
     type: 'status',
     connected: device.connected,
     protocolReady: protocol.ready,
+    knobFineVolumeState,
+    knobFineVolumeError,
+    ...(knobBackup ? { knobKeymapBackup: knobBackup } : {}),
+  } satisfies WorkerOutMessage);
+}
+
+function scheduleStreaming(): void {
+  if (streamingPaused) return;
+  if (timer) clearTimeout(timer);
+  const currentEpoch = ++epoch;
+  const tick = async () => {
+    if (currentEpoch !== epoch) return;
+    if (currentFrame && protocol.ready) await protocol.drawLcdFrame(currentFrame);
+    if (currentEpoch === epoch) timer = setTimeout(() => void tick(), 220);
   };
-  const key = JSON.stringify(msg);
-  if (key === lastStatus) return;
-  lastStatus = key;
-  port!.postMessage(msg);
+  void tick();
 }
 
 device.on('connect', reportStatus);
-device.on('disconnect', reportStatus);
-// protocol.ready flips asynchronously after ScreenInfo; poll cheaply.
-const statusTimer = setInterval(reportStatus, 500);
+device.on('disconnect', () => {
+  knobFineVolumeState = knobEnabled ? 'pending' : 'disabled';
+  knobFineVolumeError = null;
+  reportStatus();
+});
+protocol.onReady = () => {
+  reportStatus();
+  queueKnobConfiguration();
+};
 
-port.on('message', (msg: WorkerInMessage) => {
-  switch (msg.type) {
-    case 'setState':
-      ledEngine.setState(msg.state);
-      lcdEngine.setState(msg.state);
-      break;
-    case 'oneShot':
-      lcdEngine.playOneShot(msg.role);
-      break;
-    case 'applyConfig': {
-      ledEngine.setStyles(msg.states);
-      ledEngine.setKeyRoles(msg.keyRoles);
-      ledEngine.setBrightness(msg.ledBrightness);
-      const turnedOn = !autoRemap && msg.padAutoRemap;
-      const targetsChanged =
-        JSON.stringify(keyTargets) !== JSON.stringify(msg.padKeyTargets);
-      autoRemap = msg.padAutoRemap;
-      keyTargets = msg.padKeyTargets;
-      if ((turnedOn || targetsChanged) && autoRemap && protocol.ready) {
-        protocol.onReady?.();
+function pauseStreaming(): void {
+  streamingPaused = true;
+  if (timer) clearTimeout(timer);
+  timer = null;
+  epoch++;
+}
+
+function resumeStreaming(): void {
+  streamingPaused = false;
+  scheduleStreaming();
+}
+
+function queueKnobConfiguration(): void {
+  const version = ++knobConfigVersion;
+  pauseStreaming();
+  knobFineVolumeState = knobEnabled ? 'pending' : 'disabled';
+  knobFineVolumeError = null;
+  reportStatus();
+  knobQueue = knobQueue
+    .catch(() => {})
+    .then(async () => {
+      if (!protocol.ready) return;
+      try {
+        const result = await protocol.configureKnobFineVolume(knobEnabled, knobBackup);
+        if (result.backup) knobBackup = result.backup;
+        if (version !== knobConfigVersion) return;
+        knobFineVolumeState = result.state;
+        knobFineVolumeError = null;
+      } catch (error) {
+        if (version !== knobConfigVersion) return;
+        knobFineVolumeState = 'error';
+        knobFineVolumeError = error instanceof Error ? error.message : String(error);
+        console.error('[worker] knob configuration failed', error);
+      } finally {
+        if (version === knobConfigVersion) {
+          reportStatus();
+          resumeStreaming();
+        }
       }
-      break;
-    }
-    case 'shutdown':
-      void shutdown();
+    });
+}
+
+port.on('message', (message: WorkerInMessage) => {
+  if (message.type === 'setFrame') {
+    currentFrame = Buffer.from(message.frame);
+    scheduleStreaming();
+  } else if (message.type === 'configureKnob') {
+    knobEnabled = message.enabled;
+    knobBackup = message.backup ?? knobBackup;
+    queueKnobConfiguration();
+  } else if (message.type === 'shutdown') {
+    void shutdown();
   }
 });
 
-/**
- * Leave the pad dark instead of frozen on our last frame. The firmware's own
- * screen/effects stay suppressed until replug (see docs/PROTOCOL.md), so dark
- * is the cleanest hand-off we can do without flash writes.
- */
 async function shutdown(): Promise<void> {
-  clearInterval(statusTimer);
-  ledEngine.stop();
-  lcdEngine.stop();
+  pauseStreaming();
+  knobConfigVersion++;
   try {
-    const black = { r: 0, g: 0, b: 0 };
-    protocol.setLeds(Array(BACKLIGHT_COUNT + KEY_LED_COUNT).fill(black));
-    await protocol.drawLcdFrame(Buffer.alloc(LCD_WIDTH * LCD_HEIGHT * 2));
-  } catch {
-    // Device may already be gone; dark hand-off is best-effort.
+    await knobQueue;
+    if (protocol.ready && knobBackup) {
+      await protocol.configureKnobFineVolume(false, knobBackup);
+    }
+  } catch (error) {
+    console.error('[worker] knob restore during shutdown failed', error);
+  } finally {
+    device.stop();
+    process.exit(0);
   }
-  device.stop();
-  process.exit(0);
 }
 
 device.start();
-ledEngine.start();
-lcdEngine.start();
 reportStatus();

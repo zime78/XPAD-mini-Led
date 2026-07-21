@@ -1,11 +1,48 @@
 node_modules/
 out/
 dist/
+coverage/
+.tmp/
+tmp/
 *.log
 .DS_Store
+._*
+.AppleDouble
 *.tsbuildinfo
 re/
+
+# Local agent/runtime state — may contain session IDs, usage, and absolute paths
+.omc/
+.omx/
+.codex/
+.claude/
+
+# Local editor/workspace state
+.idea/
+.vscode/
+*.xcuserstate
+xcuserdata/
+DerivedData/
+
+# Local environment, signing, and notarization credentials
+.env
+.env.*
+!.env.example
+electron-builder.env
+build.local.env
+*.p8
+*.p12
+*.pfx
+*.pem
+*.key
+*.cer
+*.crt
+*.mobileprovision
+*.provisionprofile
+
 # All-Rights-Reserved fan art, imported locally by tools/import-clawd-gifs.js
 assets/clawd-external/
+# Local UI capture contains third-party album artwork; do not redistribute
+docs/images/settings-window.png
 # Pulsar's copyrighted manual: keep local, do not redistribute
 Manual_XPad_mini.pdf

@@ -3,45 +3,23 @@ import HID from 'node-hid';
 
 export const XPAD_VID = 0x3710;
 export const XPAD_PID = 0x2507;
-
-/** Vendor collections on interface 1 (see tools/hid-enum.js output, docs/PROTOCOL.md). */
-export const USAGE_PAGE_CONFIG = 0xff00; // Col01 — config/command channel
-export const USAGE_PAGE_AUX = 0xff11; // Col02
-export const USAGE_PAGE_BULK = 0xff12; // Col03 — suspected bulk/LCD channel
+export const USAGE_PAGE_BULK = 0xff12;
+export const USAGE_BULK = 0x02;
 
 const RECONNECT_POLL_MS = 3000;
 
-export interface XpadChannels {
-  config: HID.HID | null;
-  aux: HID.HID | null;
-  bulk: HID.HID | null;
-}
-
-/**
- * Finds and holds open handles to the XPAD Mini's vendor HID collections,
- * re-opening them automatically when the device is unplugged/replugged.
- *
- * Emits: 'connect', 'disconnect'.
- */
+/** Opens only the XPAD Mini vendor bulk collection used for RAM framebuffer writes. */
 export class XpadDevice extends EventEmitter {
-  private channels: XpadChannels = { config: null, aux: null, bulk: null };
   private pollTimer: NodeJS.Timeout | null = null;
+  private _bulk: HID.HID | null = null;
   private _connected = false;
 
   get connected(): boolean {
     return this._connected;
   }
 
-  get config(): HID.HID | null {
-    return this.channels.config;
-  }
-
-  get aux(): HID.HID | null {
-    return this.channels.aux;
-  }
-
   get bulk(): HID.HID | null {
-    return this.channels.bulk;
+    return this._bulk;
   }
 
   start(): void {
@@ -54,62 +32,46 @@ export class XpadDevice extends EventEmitter {
   stop(): void {
     if (this.pollTimer) clearInterval(this.pollTimer);
     this.pollTimer = null;
-    this.closeAll();
+    this.close();
   }
 
   private tryOpen(): void {
-    let infos: HID.Device[];
     try {
-      infos = HID.devices().filter(
-        (d) => d.vendorId === XPAD_VID && d.productId === XPAD_PID
+      const info = HID.devices().find(
+        (device) =>
+          device.vendorId === XPAD_VID &&
+          device.productId === XPAD_PID &&
+          device.usagePage === USAGE_PAGE_BULK &&
+          device.usage === USAGE_BULK
       );
-    } catch (err) {
-      console.error('[hid] enumerate failed', err);
-      return;
+      if (!info?.path) return;
+      // XPAD Mini is a composite keyboard/HID device. macOS requires the
+      // non-exclusive open mode so the OS can grant Input Monitoring access.
+      this._bulk = new HID.HID(info.path, { nonExclusive: true });
+      this._bulk.on('error', () => this.onError());
+      this._connected = true;
+      console.log('[hid] XPAD Mini bulk channel connected');
+      this.emit('connect');
+    } catch (error) {
+      console.error('[hid] XPAD Mini open failed', error);
+      this.close();
     }
-    if (infos.length === 0) return;
-
-    const byPage = (page: number) => infos.find((d) => d.usagePage === page);
-    const open = (info?: HID.Device): HID.HID | null => {
-      if (!info?.path) return null;
-      try {
-        const dev = new HID.HID(info.path);
-        dev.on('error', () => this.onError());
-        return dev;
-      } catch (err) {
-        console.error('[hid] open failed', info.path, err);
-        return null;
-      }
-    };
-
-    const config = open(byPage(USAGE_PAGE_CONFIG));
-    if (!config) return; // config channel is mandatory
-    this.channels = {
-      config,
-      aux: open(byPage(USAGE_PAGE_AUX)),
-      bulk: open(byPage(USAGE_PAGE_BULK)),
-    };
-    this._connected = true;
-    console.log('[hid] XPAD Mini connected');
-    this.emit('connect');
   }
 
   private onError(): void {
     if (!this._connected) return;
     console.log('[hid] XPAD Mini disconnected');
-    this.closeAll();
+    this.close();
     this.emit('disconnect');
   }
 
-  private closeAll(): void {
+  private close(): void {
     this._connected = false;
-    for (const key of ['config', 'aux', 'bulk'] as const) {
-      try {
-        this.channels[key]?.close();
-      } catch {
-        // already closed
-      }
-      this.channels[key] = null;
+    try {
+      this._bulk?.close();
+    } catch {
+      // Already closed by the operating system.
     }
+    this._bulk = null;
   }
 }

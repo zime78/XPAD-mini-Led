@@ -1,287 +1,410 @@
-import type { HidTarget } from '../../shared/types';
+import type { KnobKeymapBackup } from '../../shared/types';
 import { XpadDevice } from './hid';
-
-export interface Rgb {
-  r: number;
-  g: number;
-  b: number;
-}
 
 export const LCD_WIDTH = 240;
 export const LCD_HEIGHT = 135;
-export const BACKLIGHT_COUNT = 10;
-export const KEY_LED_COUNT = 3;
 
 const PACKET_SIZE = 1024;
 const REPORT_ID = 0x22;
-const ECHO = 0x04; // "application echo"; responses mirror it
-const LED_TOTAL = BACKLIGHT_COUNT + KEY_LED_COUNT;
-
+const APPLICATION_ECHO = 0x04;
 const CMD_SCREEN_INFO = 0x02;
-const CMD_KEY_INFO = 0x10; // read/write one key's mapping; header index selects the key
-const CMD_DISPLAY = 0x25; // read/write framebuffer (RGB565 LE, u32 byte offset)
-const CMD_LED_COLORS = 0x27; // read/write 13 x [R,G,B,0]
-
-/**
- * KeyInfo entry (56 bytes): u32 key_class (1 = keyboard key), u16 site_x/y,
- * u16 width/height, ... , modifier byte at offset 20, HID keycode at 21.
- * The three magnetic pad keys are entries 0/1/2 (left/center/right by
- * ascending site_x); factory keycodes are q/w/e.
- */
+const CMD_KEY_INFO = 0x10;
+const CMD_DISPLAY = 0x25;
 const KEY_INFO_SIZE = 56;
+const KEY_OUTPUT_TYPE_OFFSET = 16;
+const KEY_ACTION_OFFSET = 20;
+const KEY_ACTION_SIZE = 4;
 const KEY_MODIFIER_OFFSET = 20;
 const KEY_KEYCODE_OFFSET = 21;
+const KEY_OUTPUT_KEYBOARD = 0;
+const KEY_OUTPUT_EXTENDED = 3;
+const KNOB_LEFT_INDEX = 15;
+const KNOB_RIGHT_INDEX = 14;
+const F20_USAGE = 0x6f;
+const F19_USAGE = 0x6e;
+const LEGACY_F21_USAGE = 0x70;
+const EXTENDED_VOLUME_UP = 10;
+const EXTENDED_VOLUME_DOWN = 11;
+
+export interface KnobMappingResult {
+  state: 'disabled' | 'active';
+  backup?: KnobKeymapBackup;
+}
 
 /**
- * Sayo v2 protocol for the Pulsar XPAD Mini (SayoDevice-based firmware).
- * See docs/PROTOCOL.md for the reverse-engineering notes.
- *
- * Packet (1024 bytes, fast channel usagePage 0xFF12):
- *   [0]    report id 0x22
- *   [1]    echo
- *   [2:4]  checksum: u16 LE sum of the used packet as 16-bit LE words
- *   [4:6]  length u16 LE = payload + 4
- *   [6]    command
- *   [7]    index
- *   [8..]  payload
- *
- * Writes go to device RAM only (no Save command is ever sent), so unplugging
- * restores the device's own settings.
+ * Minimal Sayo API v2 client for the XPAD Mini.
+ * It verifies ScreenInfo, writes RGB565 frames, and can temporarily map the
+ * two knob directions through KeyInfo. Save (0x0D), flash, LED and bootloader
+ * commands remain intentionally absent, so all writes are RAM-only.
  */
 export class XpadProtocol {
   private _ready = false;
+  private lastFrame: Buffer | null = null;
+  private framesUntilFull = 0;
+  private lastLcdWrite = 0;
   private lastError = 0;
-  /** Invoked (again on every reconnect) once ScreenInfo has verified the protocol. */
   onReady: (() => void) | null = null;
 
   constructor(private device: XpadDevice) {
     device.on('connect', () => {
-      this.lastFrame = null;
-      this.lastLedPayload = null;
+      this.reset();
       void this.verify();
     });
-    device.on('disconnect', () => {
-      this._ready = false;
-      this.lastFrame = null;
-      this.lastLedPayload = null;
-    });
+    device.on('disconnect', () => this.reset());
   }
 
   get ready(): boolean {
     return this._ready;
   }
 
-  /** Confirm the device speaks the protocol by requesting ScreenInfo. */
+  private reset(): void {
+    this._ready = false;
+    this.lastFrame = null;
+    this.framesUntilFull = 0;
+    this.lastLcdWrite = 0;
+  }
+
   private async verify(): Promise<void> {
-    const dev = this.device.bulk;
-    if (!dev) return;
+    const device = this.device.bulk;
+    if (!device) return;
+    const onData = (data: Buffer) => {
+      const packet = Buffer.from(data);
+      if (packet[0] !== REPORT_ID || packet[6] !== CMD_SCREEN_INFO) return;
+      const width = packet.readUInt16LE(8);
+      const height = packet.readUInt16LE(10);
+      device.removeListener('data', onData);
+      if (width !== LCD_WIDTH || height !== LCD_HEIGHT) {
+        console.error(`[protocol] unexpected screen ${width}x${height}`);
+        return;
+      }
+      this._ready = true;
+      console.log(`[protocol] ScreenInfo ${width}x${height} — RAM streaming ready`);
+      this.onReady?.();
+    };
     try {
-      const onData = (data: Buffer) => {
-        const buf = Buffer.from(data);
-        if (buf[0] !== REPORT_ID || buf[6] !== CMD_SCREEN_INFO) return;
-        const width = buf.readUInt16LE(8);
-        const height = buf.readUInt16LE(10);
-        console.log(`[protocol] ScreenInfo ${width}x${height} — protocol ready`);
-        this._ready = true;
-        dev.removeListener('data', onData);
-        this.onReady?.();
-      };
-      dev.on('data', onData);
-      dev.write(this.buildPacket(CMD_SCREEN_INFO, Buffer.alloc(0)));
-      setTimeout(() => dev.removeListener('data', onData), 2000);
-    } catch (err) {
-      console.error('[protocol] verify failed', err);
+      device.on('data', onData);
+      device.write(this.buildPacket(CMD_SCREEN_INFO, Buffer.alloc(0)));
+      setTimeout(() => device.removeListener('data', onData), 2000);
+    } catch (error) {
+      device.removeListener('data', onData);
+      console.error('[protocol] ScreenInfo failed', error);
     }
   }
 
-  /**
-   * Set all 13 LEDs for one animation frame via cmd 0x27.
-   * The payload must be exactly 13 entries (52 bytes) — the firmware rejects
-   * other lengths outright.
-   * @param colors 13 colors by DEVICE index: 0-2 key LEDs left/center/right,
-   *   3-12 light bar right -> left (see docs/PROTOCOL.md, calibrated layout)
-   */
-  private lastLedPayload: Buffer | null = null;
+  async configureKnobFineVolume(
+    enabled: boolean,
+    storedBackup?: KnobKeymapBackup
+  ): Promise<KnobMappingResult> {
+    if (!this._ready) throw new Error('XPAD 프로토콜이 준비되지 않았습니다.');
 
-  setLeds(colors: Rgb[]): void {
-    const dev = this.device.bulk;
-    if (!dev) return;
-    const payload = Buffer.alloc(LED_TOTAL * 4);
-    for (let i = 0; i < LED_TOTAL; i++) {
-      const c = colors[i] ?? { r: 0, g: 0, b: 0 };
-      payload[i * 4] = c.r;
-      payload[i * 4 + 1] = c.g;
-      payload[i * 4 + 2] = c.b;
+    const currentLeft = await this.readKeyInfoWithRetry(KNOB_LEFT_INDEX);
+    const currentRight = await this.readKeyInfoWithRetry(KNOB_RIGHT_INDEX);
+    if (!currentLeft || !currentRight) {
+      throw new Error('XPAD 노브 KeyInfo를 읽지 못했습니다.');
     }
-    // Unchanged frames (idle glow, steady, flash plateaus) are skipped: every
-    // needless packet is firmware time not spent scanning keys.
-    if (this.lastLedPayload?.equals(payload)) return;
-    if (this.tryWrite(dev, this.buildPacket(CMD_LED_COLORS, payload), 'setLeds')) {
-      this.lastLedPayload = payload;
-    } else {
-      this.lastLedPayload = null;
+
+    const decodedLeft = decodeKeyInfo(storedBackup?.left);
+    const decodedRight = decodeKeyInfo(storedBackup?.right);
+    const savedLeft = isExtendedMapping(decodedLeft, EXTENDED_VOLUME_DOWN)
+      ? decodedLeft
+      : null;
+    const savedRight = isExtendedMapping(decodedRight, EXTENDED_VOLUME_UP)
+      ? decodedRight
+      : null;
+    const leftMapped = isKeyboardMapping(currentLeft, F20_USAGE);
+    const rightMapped = isKeyboardMapping(currentRight, F19_USAGE);
+    const rightLegacyMapped = isKeyboardMapping(currentRight, LEGACY_F21_USAGE);
+
+    if (!enabled) {
+      const restoreLeft = leftMapped ? savedLeft : null;
+      const restoreRight = rightMapped || rightLegacyMapped ? savedRight : null;
+      if (leftMapped && !restoreLeft) {
+        throw new Error('왼쪽 노브 원본 백업이 없어 안전하게 복원할 수 없습니다.');
+      }
+      if ((rightMapped || rightLegacyMapped) && !restoreRight) {
+        throw new Error('오른쪽 노브 원본 백업이 없어 안전하게 복원할 수 없습니다.');
+      }
+      await this.applyKnobEntries(
+        currentLeft,
+        currentRight,
+        restoreLeft ?? currentLeft,
+        restoreRight ?? currentRight
+      );
+      return { state: 'disabled', ...(storedBackup ? { backup: storedBackup } : {}) };
+    }
+
+    if (!leftMapped && !isExtendedMapping(currentLeft, EXTENDED_VOLUME_DOWN)) {
+      throw new Error(
+        `왼쪽 노브가 예상한 Vol- 또는 앱 매핑 상태가 아닙니다 (${describeKeyInfoAction(currentLeft)}).`
+      );
+    }
+    if (
+      !rightMapped &&
+      !rightLegacyMapped &&
+      !isExtendedMapping(currentRight, EXTENDED_VOLUME_UP)
+    ) {
+      throw new Error(
+        `오른쪽 노브가 예상한 Vol+ 또는 앱 매핑 상태가 아닙니다 (${describeKeyInfoAction(currentRight)}).`
+      );
+    }
+
+    // 초기 F21 기반 빌드를 포함해 앱 전용 매핑만 출고 Vol-/Vol+
+    // 엔트리로 안전하게 복구한다.
+    const backupLeft =
+      savedLeft ??
+      (leftMapped
+        ? makeExtendedMapping(currentLeft, EXTENDED_VOLUME_DOWN)
+        : currentLeft);
+    const backupRight =
+      savedRight ??
+      (rightMapped || rightLegacyMapped
+        ? makeExtendedMapping(currentRight, EXTENDED_VOLUME_UP)
+        : currentRight);
+
+    const backup: KnobKeymapBackup = {
+      left: backupLeft.toString('base64'),
+      right: backupRight.toString('base64'),
+    };
+    await this.applyKnobEntries(
+      currentLeft,
+      currentRight,
+      leftMapped ? currentLeft : makeKeyboardMapping(currentLeft, F20_USAGE),
+      rightMapped ? currentRight : makeKeyboardMapping(currentRight, F19_USAGE)
+    );
+    return { state: 'active', backup };
+  }
+
+  private async applyKnobEntries(
+    currentLeft: Buffer,
+    currentRight: Buffer,
+    targetLeft: Buffer,
+    targetRight: Buffer
+  ): Promise<void> {
+    let leftWriteAttempted = false;
+    try {
+      if (!currentLeft.equals(targetLeft)) {
+        leftWriteAttempted = true;
+        await this.writeKeyInfo(KNOB_LEFT_INDEX, targetLeft);
+      }
+      if (!currentRight.equals(targetRight)) {
+        await this.writeKeyInfo(KNOB_RIGHT_INDEX, targetRight);
+      }
+    } catch (error) {
+      if (leftWriteAttempted) {
+        try {
+          await this.writeKeyInfo(KNOB_LEFT_INDEX, currentLeft);
+        } catch (rollbackError) {
+          console.error('[protocol] knob remap rollback failed', rollbackError);
+        }
+      }
+      throw error;
     }
   }
 
-  /** Read one KeyInfo entry (null on timeout/garbled response). */
+  private async readKeyInfoWithRetry(index: number): Promise<Buffer | null> {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const entry = await this.readKeyInfo(index);
+      if (entry) return entry;
+    }
+    return null;
+  }
+
   private readKeyInfo(index: number): Promise<Buffer | null> {
-    const dev = this.device.bulk;
-    if (!dev) return Promise.resolve(null);
+    const device = this.device.bulk;
+    if (!device) return Promise.resolve(null);
     return new Promise((resolve) => {
-      const finish = (result: Buffer | null) => {
+      let finished = false;
+      const finish = (entry: Buffer | null) => {
+        if (finished) return;
+        finished = true;
         clearTimeout(timer);
-        dev.removeListener('data', onData);
-        resolve(result);
+        device.removeListener('data', onData);
+        resolve(entry);
       };
       const onData = (data: Buffer) => {
-        const buf = Buffer.from(data);
-        if (buf[0] !== REPORT_ID || buf[6] !== CMD_KEY_INFO || buf[7] !== index) return;
-        const len = buf.readUInt16LE(4);
-        // Concurrent LED/LCD traffic can garble responses; validate the shape.
-        if (len - 4 !== KEY_INFO_SIZE) return finish(null);
-        finish(buf.slice(8, 8 + KEY_INFO_SIZE));
+        const packet = Buffer.from(data);
+        if (
+          packet[0] !== REPORT_ID ||
+          packet[6] !== CMD_KEY_INFO ||
+          packet[7] !== index
+        ) {
+          return;
+        }
+        const payloadLength = packet.readUInt16LE(4) - 4;
+        if (payloadLength !== KEY_INFO_SIZE) return finish(null);
+        finish(Buffer.from(packet.subarray(8, 8 + KEY_INFO_SIZE)));
       };
-      const timer = setTimeout(() => finish(null), 1500);
-      dev.on('data', onData);
-      if (!this.tryWrite(dev, this.buildPacket(CMD_KEY_INFO, Buffer.alloc(0), index), 'readKeyInfo')) {
+      const timer = setTimeout(() => finish(null), 800);
+      device.on('data', onData);
+      if (
+        !this.tryWrite(
+          device,
+          this.buildPacket(CMD_KEY_INFO, Buffer.alloc(0), index),
+          'KeyInfo 읽기'
+        )
+      ) {
         finish(null);
       }
     });
   }
 
-  /**
-   * Map the three pad keys (factory q/w/e) to the given targets (modifier
-   * bits + usage — modifier-only combos like Ctrl+Win work too) so the pad
-   * emits the configured actions BY ITSELF (a hotkey round-trip through the
-   * app clumps under load) — RAM-only, like everything else here: no Save is
-   * sent, replugging restores the on-device keymap, and this re-runs on every
-   * reconnect. Null targets and non-keyboard entry classes are left alone.
-   */
-  async remapPadKeys(targets: (HidTarget | null)[]): Promise<void> {
-    for (let i = 0; i < targets.length; i++) {
-      const target = targets[i];
-      if (target === null) continue;
-      let entry: Buffer | null = null;
-      for (let attempt = 0; attempt < 3 && !entry; attempt++) {
-        entry = await this.readKeyInfo(i);
-      }
-      if (!entry || entry.readUInt32LE(0) !== 1) {
-        if (!entry) console.error(`[protocol] remap: could not read key ${i}`);
-        continue;
-      }
-      const curMod = entry[KEY_MODIFIER_OFFSET];
-      const curKey = entry[KEY_KEYCODE_OFFSET];
-      if (curMod === target.mod && curKey === target.key) continue;
-      const patched = Buffer.from(entry);
-      patched[KEY_MODIFIER_OFFSET] = target.mod;
-      patched[KEY_KEYCODE_OFFSET] = target.key;
-      const dev = this.device.bulk;
-      if (!dev) return;
-      this.tryWrite(dev, this.buildPacket(CMD_KEY_INFO, patched, i), 'remapPadKeys');
-      console.log(
-        `[protocol] pad key ${i} mapped mod=0x${curMod.toString(16)},key=0x${curKey.toString(
-          16
-        )} -> mod=0x${target.mod.toString(16)},key=0x${target.key.toString(16)}`
-      );
+  private async writeKeyInfo(index: number, entry: Buffer): Promise<void> {
+    if (entry.length !== KEY_INFO_SIZE) throw new Error('잘못된 KeyInfo 길이입니다.');
+    const device = this.device.bulk;
+    if (!device) throw new Error('XPAD 장치 연결이 끊겼습니다.');
+    if (!this.tryWrite(device, this.buildPacket(CMD_KEY_INFO, entry, index), 'KeyInfo 쓰기')) {
+      throw new Error(`노브 KeyInfo ${index} 쓰기에 실패했습니다.`);
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, 30));
+    const readback = await this.readKeyInfoWithRetry(index);
+    if (!readback || !hasSameKeyAction(readback, entry)) {
+      throw new Error(`노브 KeyInfo ${index} readback 검증에 실패했습니다.`);
     }
   }
 
-  private lastFrame: Buffer | null = null;
-  private framesUntilFull = 0;
-  private lastLcdWrite = 0;
-
-  /**
-   * Stream one LCD frame via cmd 0x25.
-   *
-   * Only chunks that differ from the previously sent frame are transmitted
-   * (pixel-art animation frames share most of their content), with a full
-   * refresh every ~30 frames to heal dropped packets. Yields to the event
-   * loop between chunk groups so the LED ticker stays on schedule.
-   *
-   * @param rgb565 240x135 RGB565-LE framebuffer (must not be mutated after)
-   */
   async drawLcdFrame(rgb565: Buffer): Promise<void> {
-    const dev = this.device.bulk;
-    if (!dev) return;
-    const chunk = PACKET_SIZE - 12;
-    const force = this.lastFrame === null || this.framesUntilFull <= 0;
-    // Full refreshes are 65-packet bursts that delay the firmware's key
-    // reporting; keep them rare (errors force one immediately anyway).
-    this.framesUntilFull = force ? 300 : this.framesUntilFull - 1;
+    const device = this.device.bulk;
+    if (!device || !this._ready) return;
+    if (rgb565.length !== LCD_WIDTH * LCD_HEIGHT * 2) {
+      throw new Error(`Invalid LCD frame length: ${rgb565.length}`);
+    }
 
+    const chunkSize = PACKET_SIZE - 12;
+    const force = this.lastFrame === null || this.framesUntilFull <= 0;
+    this.framesUntilFull = force ? 300 : this.framesUntilFull - 1;
     let sent = 0;
-    for (let off = 0; off < rgb565.length; off += chunk) {
-      const n = Math.min(chunk, rgb565.length - off);
+
+    for (let offset = 0; offset < rgb565.length; offset += chunkSize) {
+      const length = Math.min(chunkSize, rgb565.length - offset);
       if (
         !force &&
         this.lastFrame &&
-        rgb565.compare(this.lastFrame, off, off + n, off, off + n) === 0
+        rgb565.compare(this.lastFrame, offset, offset + length, offset, offset + length) === 0
       ) {
         continue;
       }
-      const payload = Buffer.alloc(4 + n);
-      payload.writeUInt32LE(off, 0);
-      rgb565.copy(payload, 4, off, off + n);
-      if (!this.tryWrite(dev, this.buildPacket(CMD_DISPLAY, payload), 'drawLcdFrame')) {
-        this.lastFrame = null; // force a clean full frame after errors
+      const payload = Buffer.alloc(4 + length);
+      payload.writeUInt32LE(offset, 0);
+      rgb565.copy(payload, 4, offset, offset + length);
+      if (!this.tryWrite(device, this.buildPacket(CMD_DISPLAY, payload), 'LCD 쓰기')) {
+        this.lastFrame = null;
         return;
       }
-      // Yield after every blocking write so the LED ticker keeps its cadence,
-      // and pause briefly every few packets so the firmware's key scanner
-      // isn't starved by long write bursts (measured as clumpy keystrokes).
-      if (++sent % 6 === 0) {
-        await new Promise<void>((resolve) => setTimeout(resolve, 4));
-      } else {
-        await new Promise<void>((resolve) => setImmediate(resolve));
-      }
+      sent++;
+      await new Promise<void>((resolve) =>
+        sent % 6 === 0 ? setTimeout(resolve, 4) : setImmediate(resolve)
+      );
     }
+
     if (sent === 0 && Date.now() - this.lastLcdWrite > 250) {
-      // The firmware's own UI resumes drawing after ~0.5 s without 0x25
-      // traffic (its stock background flashes through on long animation
-      // holds). One small keep-alive chunk sustains the suppression.
-      const n = Math.min(chunk, rgb565.length);
-      const payload = Buffer.alloc(4 + n);
+      const length = Math.min(chunkSize, rgb565.length);
+      const payload = Buffer.alloc(4 + length);
       payload.writeUInt32LE(0, 0);
-      rgb565.copy(payload, 4, 0, n);
-      sent = this.tryWrite(dev, this.buildPacket(CMD_DISPLAY, payload), 'lcdKeepAlive')
+      rgb565.copy(payload, 4, 0, length);
+      sent = this.tryWrite(device, this.buildPacket(CMD_DISPLAY, payload), 'LCD keep-alive')
         ? 1
         : 0;
     }
     if (sent > 0) this.lastLcdWrite = Date.now();
-    this.lastFrame = rgb565;
+    this.lastFrame = Buffer.from(rgb565);
   }
 
-  private buildPacket(cmd: number, payload: Buffer, index = 0): Buffer {
-    const buf = Buffer.alloc(PACKET_SIZE);
-    buf[0] = REPORT_ID;
-    buf[1] = ECHO;
-    buf.writeUInt16LE(payload.length + 4, 4);
-    buf[6] = cmd;
-    buf[7] = index;
-    payload.copy(buf, 8);
-    const used = 8 + payload.length + (payload.length % 2);
-    let sum = 0;
-    for (let i = 0; i < used; i += 2) sum = (sum + buf.readUInt16LE(i)) & 0xffff;
-    buf.writeUInt16LE(sum, 2);
-    return buf;
+  private buildPacket(command: number, payload: Buffer, index = 0): Buffer {
+    const packet = Buffer.alloc(PACKET_SIZE);
+    packet[0] = REPORT_ID;
+    packet[1] = APPLICATION_ECHO;
+    packet.writeUInt16LE(payload.length + 4, 4);
+    packet[6] = command;
+    packet[7] = index;
+    payload.copy(packet, 8);
+    const usedLength = 8 + payload.length + (payload.length % 2);
+    let checksum = 0;
+    for (let offset = 0; offset < usedLength; offset += 2) {
+      checksum = (checksum + packet.readUInt16LE(offset)) & 0xffff;
+    }
+    packet.writeUInt16LE(checksum, 2);
+    return packet;
   }
 
   private tryWrite(
-    dev: NonNullable<XpadDevice['bulk']>,
+    device: NonNullable<XpadDevice['bulk']>,
     packet: Buffer,
-    what: string
+    context: string
   ): boolean {
     try {
-      dev.write(packet);
+      device.write(packet);
       return true;
-    } catch (err) {
-      // Throttle error spam from a 30 Hz ticker during unplug races.
+    } catch (error) {
       const now = Date.now();
       if (now - this.lastError > 5000) {
         this.lastError = now;
-        console.error(`[protocol] ${what} write failed`, err);
+        console.error(`[protocol] ${context} failed`, error);
       }
       return false;
     }
   }
+}
+
+function decodeKeyInfo(value: string | undefined): Buffer | null {
+  if (!value) return null;
+  try {
+    const entry = Buffer.from(value, 'base64');
+    return entry.length === KEY_INFO_SIZE ? entry : null;
+  } catch {
+    return null;
+  }
+}
+
+function isKeyboardMapping(entry: Buffer, usage: number): boolean {
+  return (
+    entry.readUInt32LE(KEY_OUTPUT_TYPE_OFFSET) === KEY_OUTPUT_KEYBOARD &&
+    entry[KEY_MODIFIER_OFFSET] === 0 &&
+    entry[KEY_KEYCODE_OFFSET] === usage &&
+    entry[KEY_KEYCODE_OFFSET + 1] === 0 &&
+    entry[KEY_KEYCODE_OFFSET + 2] === 0
+  );
+}
+
+function isExtendedMapping(entry: Buffer | null, action: number): entry is Buffer {
+  return (
+    entry !== null &&
+    entry.readUInt32LE(KEY_OUTPUT_TYPE_OFFSET) === KEY_OUTPUT_EXTENDED &&
+    entry[KEY_MODIFIER_OFFSET] === action &&
+    entry[KEY_MODIFIER_OFFSET + 1] === 0 &&
+    entry[KEY_MODIFIER_OFFSET + 2] === 0 &&
+    entry[KEY_MODIFIER_OFFSET + 3] === 0
+  );
+}
+
+function hasSameKeyAction(actual: Buffer, expected: Buffer): boolean {
+  const expectedType = expected.readUInt32LE(KEY_OUTPUT_TYPE_OFFSET);
+  if (expectedType === KEY_OUTPUT_KEYBOARD) {
+    return isKeyboardMapping(actual, expected[KEY_KEYCODE_OFFSET]);
+  }
+  if (expectedType === KEY_OUTPUT_EXTENDED) {
+    return isExtendedMapping(actual, expected[KEY_MODIFIER_OFFSET]);
+  }
+  return false;
+}
+
+function makeKeyboardMapping(entry: Buffer, usage: number): Buffer {
+  const mapped = Buffer.from(entry);
+  mapped.writeUInt32LE(KEY_OUTPUT_KEYBOARD, KEY_OUTPUT_TYPE_OFFSET);
+  mapped.fill(0, KEY_ACTION_OFFSET, KEY_ACTION_OFFSET + KEY_ACTION_SIZE);
+  mapped[KEY_KEYCODE_OFFSET] = usage;
+  return mapped;
+}
+
+function makeExtendedMapping(entry: Buffer, action: number): Buffer {
+  const mapped = Buffer.from(entry);
+  mapped.writeUInt32LE(KEY_OUTPUT_EXTENDED, KEY_OUTPUT_TYPE_OFFSET);
+  mapped.fill(0, KEY_ACTION_OFFSET, KEY_ACTION_OFFSET + KEY_ACTION_SIZE);
+  mapped[KEY_MODIFIER_OFFSET] = action;
+  return mapped;
+}
+
+function describeKeyInfoAction(entry: Buffer): string {
+  return `class=${entry.readUInt32LE(0)}, output=${entry.readUInt32LE(KEY_OUTPUT_TYPE_OFFSET)}, action=${entry
+    .subarray(KEY_ACTION_OFFSET, KEY_ACTION_OFFSET + KEY_ACTION_SIZE)
+    .toString('hex')}`;
 }

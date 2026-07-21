@@ -28,7 +28,7 @@ console.log(
   `Using usagePage 0x${info.usagePage.toString(16)} packet=${packetSize} reportId=0x${reportId.toString(16)}`
 );
 
-const dev = new HID.HID(info.path);
+const dev = new HID.HID(info.path, { nonExclusive: true });
 
 // Build ScreenInfo request: header only, no payload.
 const buf = Buffer.alloc(packetSize);
