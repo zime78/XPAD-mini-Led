@@ -1,5 +1,23 @@
-import type { KnobKeymapBackup } from '../../shared/types';
+import {
+  createFixedProfileOne,
+  EDITABLE_PROFILE_IDS,
+  KEYBOARD_SLOTS,
+  PROFILE_IDS,
+  type KeyboardDeviceSnapshot,
+  type KeyboardProfileSettings,
+  type KnobKeymapBackup,
+  type ProfileId,
+} from '../../shared/types';
 import { XpadDevice } from './hid';
+import {
+  decodeKeyboardAction,
+  KEY_ACTION_OFFSET,
+  KEY_INFO_SIZE,
+  KEY_OUTPUT_EXTENDED,
+  KEY_OUTPUT_KEYBOARD,
+  KEY_OUTPUT_TYPE_OFFSET,
+  SLOT_KEY_INFO_INDEX,
+} from './keyboard-profile-codec';
 
 export const LCD_WIDTH = 240;
 export const LCD_HEIGHT = 135;
@@ -10,14 +28,14 @@ const APPLICATION_ECHO = 0x04;
 const CMD_SCREEN_INFO = 0x02;
 const CMD_KEY_INFO = 0x10;
 const CMD_DISPLAY = 0x25;
-const KEY_INFO_SIZE = 56;
-const KEY_OUTPUT_TYPE_OFFSET = 16;
-const KEY_ACTION_OFFSET = 20;
 const KEY_ACTION_SIZE = 4;
 const KEY_MODIFIER_OFFSET = 20;
 const KEY_KEYCODE_OFFSET = 21;
-const KEY_OUTPUT_KEYBOARD = 0;
-const KEY_OUTPUT_EXTENDED = 3;
+const SYSTEM_INFO_SIZE = 44;
+const SYSTEM_INFO_CONFIG_OFFSET = 5;
+const SYSTEM_INFO_CONFIG_RANGE_MASK = 0xf0;
+const SYSTEM_INFO_CONFIG_SELECTION_MASK = 0x0f;
+const PROFILE_SWITCH_DELAY_MS = 80;
 const KNOB_LEFT_INDEX = 15;
 const KNOB_RIGHT_INDEX = 14;
 const F20_USAGE = 0x6f;
@@ -174,6 +192,104 @@ export class XpadProtocol {
     return { state: 'active', backup };
   }
 
+  async readKeyboardProfiles(): Promise<KeyboardDeviceSnapshot> {
+    if (!this._ready) throw new Error('XPAD 프로토콜이 준비되지 않았습니다.');
+
+    const originalSystemInfo = await this.readSystemInfoWithRetry();
+    if (!originalSystemInfo) throw new Error('XPAD SystemInfo를 읽지 못했습니다.');
+    const originalProfileIndex = profileIndexFromSystemInfo(originalSystemInfo);
+    const profiles = {
+      1: createFixedProfileOne(),
+    } as Record<ProfileId, KeyboardProfileSettings>;
+    let currentSystemInfo = originalSystemInfo;
+    let scanError: unknown = null;
+    let restoreError: unknown = null;
+
+    try {
+      for (const profileId of EDITABLE_PROFILE_IDS) {
+        const profileIndex = profileId - 1;
+        if (profileIndexFromSystemInfo(currentSystemInfo) !== profileIndex) {
+          currentSystemInfo = await this.switchProfile(currentSystemInfo, profileIndex);
+        }
+
+        const assignments = {} as KeyboardProfileSettings['assignments'];
+        for (const slot of KEYBOARD_SLOTS) {
+          const entry = await this.readKeyInfoWithRetry(SLOT_KEY_INFO_INDEX[slot]);
+          if (!entry) {
+            throw new Error(`Profile ${profileId} ${slot} 버튼 KeyInfo를 읽지 못했습니다.`);
+          }
+          assignments[slot] = decodeKeyboardAction(entry);
+        }
+        profiles[profileId] = { id: profileId, assignments };
+      }
+    } catch (error) {
+      scanError = error;
+    } finally {
+      try {
+        const latestSystemInfo = (await this.readSystemInfoWithRetry()) ?? currentSystemInfo;
+        if (profileIndexFromSystemInfo(latestSystemInfo) !== originalProfileIndex) {
+          await this.switchProfile(latestSystemInfo, originalProfileIndex);
+        }
+      } catch (error) {
+        restoreError = error;
+      }
+    }
+
+    if (restoreError) {
+      const reason = restoreError instanceof Error ? restoreError.message : String(restoreError);
+      throw new Error(`프로필 조회 후 원래 Profile ${originalProfileIndex + 1} 복원에 실패했습니다: ${reason}`);
+    }
+    if (scanError) throw scanError;
+
+    return {
+      activeProfileId: (originalProfileIndex + 1) as ProfileId,
+      profiles,
+    };
+  }
+
+  private async switchProfile(systemInfo: Buffer, profileIndex: number): Promise<Buffer> {
+    if (profileIndex < 0 || profileIndex >= PROFILE_IDS.length) {
+      throw new Error(`잘못된 프로필 인덱스입니다: ${profileIndex}`);
+    }
+    const device = this.device.bulk;
+    if (!device) throw new Error('XPAD 장치 연결이 끊겼습니다.');
+
+    const next = Buffer.from(systemInfo);
+    next[SYSTEM_INFO_CONFIG_OFFSET] =
+      (next[SYSTEM_INFO_CONFIG_OFFSET] & SYSTEM_INFO_CONFIG_RANGE_MASK) | profileIndex;
+    if (!this.tryWrite(device, this.buildPacket(CMD_SCREEN_INFO, next), '프로필 RAM 전환')) {
+      throw new Error(`Profile ${profileIndex + 1} RAM 전환에 실패했습니다.`);
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, PROFILE_SWITCH_DELAY_MS));
+    const readback = await this.readSystemInfoWithRetry();
+    if (!readback || profileIndexFromSystemInfo(readback) !== profileIndex) {
+      throw new Error(`Profile ${profileIndex + 1} 전환 readback 검증에 실패했습니다.`);
+    }
+    return readback;
+  }
+
+  private async readSystemInfoWithRetry(): Promise<Buffer | null> {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const info = await this.readSystemInfo();
+      if (info) return info;
+    }
+    return null;
+  }
+
+  private async readSystemInfo(): Promise<Buffer | null> {
+    const info = await this.readPayload(CMD_SCREEN_INFO, 0, SYSTEM_INFO_SIZE, 'SystemInfo 읽기');
+    if (!info) return null;
+    if (info.readUInt16LE(0) !== LCD_WIDTH || info.readUInt16LE(2) !== LCD_HEIGHT) {
+      return null;
+    }
+    try {
+      profileIndexFromSystemInfo(info);
+      return info;
+    } catch {
+      return null;
+    }
+  }
+
   private async applyKnobEntries(
     currentLeft: Buffer,
     currentRight: Buffer,
@@ -210,6 +326,15 @@ export class XpadProtocol {
   }
 
   private readKeyInfo(index: number): Promise<Buffer | null> {
+    return this.readPayload(CMD_KEY_INFO, index, KEY_INFO_SIZE, 'KeyInfo 읽기');
+  }
+
+  private readPayload(
+    command: number,
+    index: number,
+    expectedSize: number,
+    context: string
+  ): Promise<Buffer | null> {
     const device = this.device.bulk;
     if (!device) return Promise.resolve(null);
     return new Promise((resolve) => {
@@ -225,22 +350,22 @@ export class XpadProtocol {
         const packet = Buffer.from(data);
         if (
           packet[0] !== REPORT_ID ||
-          packet[6] !== CMD_KEY_INFO ||
+          packet[6] !== command ||
           packet[7] !== index
         ) {
           return;
         }
         const payloadLength = packet.readUInt16LE(4) - 4;
-        if (payloadLength !== KEY_INFO_SIZE) return finish(null);
-        finish(Buffer.from(packet.subarray(8, 8 + KEY_INFO_SIZE)));
+        if (payloadLength !== expectedSize) return finish(null);
+        finish(Buffer.from(packet.subarray(8, 8 + expectedSize)));
       };
       const timer = setTimeout(() => finish(null), 800);
       device.on('data', onData);
       if (
         !this.tryWrite(
           device,
-          this.buildPacket(CMD_KEY_INFO, Buffer.alloc(0), index),
-          'KeyInfo 읽기'
+          this.buildPacket(command, Buffer.alloc(0), index),
+          context
         )
       ) {
         finish(null);
@@ -343,6 +468,21 @@ export class XpadProtocol {
       return false;
     }
   }
+}
+
+function profileIndexFromSystemInfo(info: Buffer): number {
+  if (info.length !== SYSTEM_INFO_SIZE) {
+    throw new Error(`잘못된 SystemInfo 길이입니다: ${info.length}`);
+  }
+  const configByte = info[SYSTEM_INFO_CONFIG_OFFSET];
+  const profileCount = configByte >> 4;
+  const profileIndex = configByte & SYSTEM_INFO_CONFIG_SELECTION_MASK;
+  if (profileCount < PROFILE_IDS.length || profileIndex >= PROFILE_IDS.length) {
+    throw new Error(
+      `지원하지 않는 SystemInfo 프로필 값입니다: range=${profileCount}, selection=${profileIndex}`
+    );
+  }
+  return profileIndex;
 }
 
 function decodeKeyInfo(value: string | undefined): Buffer | null {

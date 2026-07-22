@@ -1,15 +1,18 @@
 type AppHeaderProps = {
-  onCloseSettings: () => void;
+  title: string;
+  subtitle: string;
+  closeLabel: string;
+  onClose: () => void;
 };
 
-export function AppHeader({ onCloseSettings }: AppHeaderProps) {
+export function AppHeader({ title, subtitle, closeLabel, onClose }: AppHeaderProps) {
   return (
     <header className="app-header">
       <div>
-        <h1>설정</h1>
-        <p className="subtitle">장치 상태와 음악 표시 방식을 관리합니다.</p>
+        <h1>{title}</h1>
+        <p className="subtitle">{subtitle}</p>
       </div>
-      <IconButton label="설정 창 닫기" onClick={onCloseSettings}>
+      <IconButton label={closeLabel} onClick={onClose}>
         <CloseIcon />
       </IconButton>
     </header>
@@ -42,6 +45,23 @@ export function SettingsButton({ onClick }: { onClick: () => void }) {
     <IconButton label="설정 열기" onClick={onClick}>
       <SettingsIcon />
     </IconButton>
+  );
+}
+
+export function KeyboardSettingsButton({ onClick }: { onClick: () => void }) {
+  return (
+    <IconButton label="키보드 설정 열기" onClick={onClick}>
+      <KeyboardIcon />
+    </IconButton>
+  );
+}
+
+function KeyboardIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="M7 9h.01M11 9h.01M15 9h.01M18 9h.01M7 13h.01M11 13h.01M15 13h3M7 16h10" />
+    </svg>
   );
 }
 

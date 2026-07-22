@@ -3,17 +3,23 @@ import type { ConfigPatch } from './settings-types';
 
 type DisplaySettingsSectionProps = {
   config: AppConfig;
+  disabled: boolean;
   onPatch: ConfigPatch;
 };
 
-export function DisplaySettingsSection({ config, onPatch }: DisplaySettingsSectionProps) {
+export function DisplaySettingsSection({
+  config,
+  disabled,
+  onPatch,
+}: DisplaySettingsSectionProps) {
   return (
-    <section className="settings-section">
+    <section className={`settings-section${disabled ? ' is-disabled' : ''}`}>
       <h2>표시 설정</h2>
       <label>
         우선 음악 앱
         <select
           value={config.servicePreference}
+          disabled={disabled}
           onChange={(event) =>
             onPatch((draft) => {
               draft.servicePreference = event.target.value as AppConfig['servicePreference'];
@@ -29,6 +35,7 @@ export function DisplaySettingsSection({ config, onPatch }: DisplaySettingsSecti
         확인 주기
         <select
           value={config.pollIntervalMs}
+          disabled={disabled}
           onChange={(event) =>
             onPatch((draft) => {
               draft.pollIntervalMs = Number(event.target.value);
@@ -45,6 +52,7 @@ export function DisplaySettingsSection({ config, onPatch }: DisplaySettingsSecti
         <input
           type="checkbox"
           checked={config.showArtwork}
+          disabled={disabled}
           onChange={(event) =>
             onPatch((draft) => {
               draft.showArtwork = event.target.checked;
@@ -57,6 +65,7 @@ export function DisplaySettingsSection({ config, onPatch }: DisplaySettingsSecti
         <input
           type="checkbox"
           checked={config.showProgress}
+          disabled={disabled}
           onChange={(event) =>
             onPatch((draft) => {
               draft.showProgress = event.target.checked;
@@ -69,6 +78,7 @@ export function DisplaySettingsSection({ config, onPatch }: DisplaySettingsSecti
         <input
           type="checkbox"
           checked={config.launchAtLogin}
+          disabled={disabled}
           onChange={(event) =>
             onPatch((draft) => {
               draft.launchAtLogin = event.target.checked;

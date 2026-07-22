@@ -1,15 +1,15 @@
 import { useEffect, useState } from 'react';
 import type { AppConfig, StatusSnapshot } from '../../shared/types';
 import { AppHeader } from './components/app-header';
+import { KeyboardSettingsView } from './components/keyboard-settings-view';
 import { PlayerView } from './components/player-view';
 import { SettingsView } from './components/settings-view';
 
-type AppView = 'player' | 'settings';
+type AppView = 'player' | 'settings' | 'keyboard';
 
 function windowView(): AppView {
-  return new URLSearchParams(window.location.search).get('view') === 'settings'
-    ? 'settings'
-    : 'player';
+  const view = new URLSearchParams(window.location.search).get('view');
+  return view === 'settings' || view === 'keyboard' ? view : 'player';
 }
 
 export function App() {
@@ -18,6 +18,15 @@ export function App() {
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [saved, setSaved] = useState<AppConfig | null>(null);
   const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    document.title =
+      view === 'keyboard'
+        ? 'XPAD Mini 키보드 설정'
+        : view === 'settings'
+          ? 'XPAD Mini Now Playing 설정'
+          : 'XPAD Mini Now Playing';
+  }, [view]);
 
   useEffect(() => {
     void window.xpad.getStatus().then(setStatus);
@@ -39,9 +48,19 @@ export function App() {
       <main className="app-shell player-screen">
         <PlayerView
           status={status}
+          onOpenKeyboardSettings={() => void window.xpad.openKeyboardSettingsWindow()}
           onOpenSettings={() => void window.xpad.openSettingsWindow()}
         />
       </main>
+    );
+  }
+
+  if (view === 'keyboard') {
+    return (
+      <KeyboardSettingsView
+        status={status}
+        onClose={() => void window.xpad.closeKeyboardSettingsWindow()}
+      />
     );
   }
 
@@ -50,14 +69,17 @@ export function App() {
   }
 
   const dirty = JSON.stringify(config) !== JSON.stringify(saved);
+  const settingsDisabled = !status.deviceConnected || !status.protocolReady;
 
   const patch = (change: (draft: AppConfig) => void) => {
+    if (settingsDisabled) return;
     const draft = structuredClone(config);
     change(draft);
     setConfig(draft);
   };
 
   const save = async () => {
+    if (settingsDisabled) return;
     const next = await window.xpad.setConfig(config);
     setConfig(next);
     setSaved(next);
@@ -71,7 +93,12 @@ export function App() {
 
   return (
     <main className="app-shell settings-screen">
-      <AppHeader onCloseSettings={() => void window.xpad.closeSettingsWindow()} />
+      <AppHeader
+        title="설정"
+        subtitle="장치 상태와 음악 표시 방식을 관리합니다."
+        closeLabel="설정 창 닫기"
+        onClose={() => void window.xpad.closeSettingsWindow()}
+      />
       <SettingsView
         status={status}
         config={config}

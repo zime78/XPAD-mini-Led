@@ -1,5 +1,5 @@
 import type { StatusSnapshot } from '../../../shared/types';
-import { SettingsButton } from './app-header';
+import { KeyboardSettingsButton, SettingsButton } from './app-header';
 import { PlayerStatus } from './player-status';
 
 const SERVICE_NAMES = {
@@ -16,17 +16,25 @@ const PLAYBACK_STATE_NAMES = {
 
 type PlayerViewProps = {
   status: StatusSnapshot;
+  onOpenKeyboardSettings: () => void;
   onOpenSettings: () => void;
 };
 
-export function PlayerView({ status, onOpenSettings }: PlayerViewProps) {
+export function PlayerView({
+  status,
+  onOpenKeyboardSettings,
+  onOpenSettings,
+}: PlayerViewProps) {
   const track = status.track;
 
   return (
     <section className="hero" aria-labelledby="current-track-title">
       <div className="player-toolbar">
         <PlayerStatus status={status} />
-        <SettingsButton onClick={onOpenSettings} />
+        <div className="player-toolbar-actions">
+          <KeyboardSettingsButton onClick={onOpenKeyboardSettings} />
+          <SettingsButton onClick={onOpenSettings} />
+        </div>
       </div>
       <div className="player-content">
         <div className="lcd-shell">

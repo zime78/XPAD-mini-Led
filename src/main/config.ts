@@ -2,6 +2,7 @@ import { app } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import { AppConfig, DEFAULT_CONFIG, KnobKeymapBackup } from '../shared/types';
+import { normalizeKeyboardSettings } from './keyboard-settings';
 
 const KEY_INFO_BASE64_LENGTH = 76;
 
@@ -48,6 +49,7 @@ function normalize(config: AppConfig): AppConfig {
       Math.max(1, Math.round(Number(config.fineVolumeStepsPerDetent) || 1))
     ),
     ...(knobKeymapBackup ? { knobKeymapBackup } : {}),
+    keyboardSettings: normalizeKeyboardSettings(config.keyboardSettings),
     launchAtLogin: Boolean(config.launchAtLogin),
   };
 }
