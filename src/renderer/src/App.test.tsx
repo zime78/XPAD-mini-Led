@@ -84,6 +84,9 @@ describe('XPAD Mini Now Playing 화면', () => {
           activeProfileId: profileId,
         },
       })),
+      getPlayerViewMode: vi.fn().mockResolvedValue('expanded'),
+      setPlayerViewMode: vi.fn().mockImplementation(async (mode) => mode),
+      runPlayerAction: vi.fn().mockResolvedValue({ ok: true, error: null }),
       openSettingsWindow: vi.fn().mockResolvedValue(undefined),
       closeSettingsWindow: vi.fn().mockResolvedValue(undefined),
       openKeyboardSettingsWindow: vi.fn().mockResolvedValue(undefined),
@@ -201,6 +204,52 @@ describe('XPAD Mini Now Playing 화면', () => {
 
     await waitFor(() => expect(window.xpad.openKeyboardSettingsWindow).toHaveBeenCalledOnce());
     expect(screen.getByRole('heading', { name: "Say You Won't Let Go" })).toBeTruthy();
+  });
+
+  it('미니뷰에서 현재 프로파일 동작을 버튼으로 표시하고 실행한 뒤 확장뷰로 돌아간다', async () => {
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole('button', { name: '미니뷰로 축소' }));
+
+    await waitFor(() => expect(window.xpad.setPlayerViewMode).toHaveBeenCalledWith('mini'));
+    const miniView = await screen.findByRole('region', { name: 'XPAD LCD 미니뷰' });
+    expect(within(miniView).getByRole('button', { name: '왼쪽 버튼 동작 실행: Q' }).textContent)
+      .toBe('Q');
+    expect(
+      within(miniView).getByRole('button', { name: '가운데 버튼 동작 실행: Safari 실행' })
+        .textContent
+    ).toBe('Safari');
+    expect(within(miniView).getByRole('button', { name: '오른쪽 버튼 동작 실행: F5' }).textContent)
+      .toBe('F5');
+    expect(within(miniView).queryByText('왼쪽')).toBeNull();
+    expect(within(miniView).queryByText('가운데')).toBeNull();
+    expect(within(miniView).queryByText('오른쪽')).toBeNull();
+    expect(within(miniView).queryAllByRole('button', { name: /Profile [1-5]/ })).toHaveLength(0);
+    expect(within(miniView).getByRole('button', { name: '키보드 설정 열기' })).toBeTruthy();
+    expect(within(miniView).getByRole('button', { name: '설정 열기' })).toBeTruthy();
+
+    fireEvent.click(
+      within(miniView).getByRole('button', { name: '가운데 버튼 동작 실행: Safari 실행' })
+    );
+    await waitFor(() => expect(window.xpad.runPlayerAction).toHaveBeenCalledWith('center'));
+
+    fireEvent.click(within(miniView).getByRole('button', { name: '확장뷰로 확대' }));
+    await waitFor(() => expect(window.xpad.setPlayerViewMode).toHaveBeenLastCalledWith('expanded'));
+    await waitFor(() => expect(screen.getAllByRole('button', { name: /Profile [1-5]/ })).toHaveLength(5));
+  });
+
+  it('미니뷰 동작 실행 실패를 사용자에게 표시한다', async () => {
+    window.xpad.getPlayerViewMode = vi.fn().mockResolvedValue('mini');
+    window.xpad.runPlayerAction = vi.fn().mockResolvedValue({
+      ok: false,
+      error: '일반 키는 실행할 수 없습니다.',
+    });
+    render(<App />);
+
+    const action = await screen.findByRole('button', { name: '왼쪽 버튼 동작 실행: Q' });
+    fireEvent.click(action);
+
+    expect((await screen.findByRole('alert')).textContent).toBe('일반 키는 실행할 수 없습니다.');
   });
 
   it('설정 창에서 상세 상태를 표시하고 현재 창 닫기를 요청한다', async () => {

@@ -26,7 +26,7 @@ button:disabled { opacity: .4; cursor: default; }
 button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .app-shell { width: min(100%, 720px); margin: 0 auto; padding: 28px 30px 24px; }
-.player-screen { width: 100%; padding: 6px; }
+.player-screen { width: 100%; min-height: 100vh; padding: 6px; }
 .loading-screen { display: grid; min-height: 100vh; place-items: center; color: var(--text-muted); }
 .app-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 24px; }
 h1 { margin: 2px 0 4px; font-size: 32px; letter-spacing: -0.03em; }
@@ -72,6 +72,22 @@ h2 { margin: 0; }
 .badge.spotify { color: #1ed760; background: #11301c; }
 .badge.apple-music { color: #ff6478; background: #38151d; }
 .playback-state { margin-top: 14px; color: var(--accent); font-size: 12px; font-weight: 700; }
+
+.mini-player { position: relative; padding: 6px 6px 4px; }
+.mini-player .player-toolbar { width: 264px; min-height: 28px; align-items: center; gap: 8px; margin: 0 auto 12px; }
+.mini-player .player-toolbar-actions { flex: 0 0 auto; gap: 4px; }
+.mini-player .icon-button { width: 28px; height: 28px; padding: 5px; }
+.mini-player .icon-button svg { width: 15px; height: 15px; }
+.mini-player-actions { display: flex; min-width: 0; align-items: center; gap: 4px; }
+.mini-player-action { width: 46px; height: 28px; min-width: 0; overflow: hidden; padding: 0 3px; border-color: #3b82f6; border-radius: 8px; background: linear-gradient(180deg, #1d5da8, #174783); color: #eff6ff; font-size: 8px; font-weight: 800; line-height: 1; text-overflow: ellipsis; white-space: nowrap; box-shadow: inset 0 1px 0 #60a5fa55; }
+.mini-player-action:nth-child(2) { width: 64px; }
+.mini-player-action:hover:not(:disabled) { border-color: #93c5fd; background: linear-gradient(180deg, #256fc1, #195393); }
+.mini-player-action[data-pending='true'] { border-color: #bfdbfe; box-shadow: 0 0 10px #60a5fa88; }
+.mini-player-content { display: block; }
+.mini-player-content .lcd-shell { width: 264px; margin: 0 auto; padding: 8px 10px 10px; border-radius: 18px; }
+.mini-player-content .lcd-shell img,
+.mini-player-content .preview-empty { width: 240px; height: 135px; }
+.mini-player-action-error { position: absolute; z-index: 2; top: 46px; left: 12px; right: 12px; margin: 0; padding: 6px 8px; border: 1px solid #7f1d32; border-radius: 8px; background: #3b1520ee; color: #fecdd3; font-size: 9px; text-align: center; box-shadow: 0 8px 24px #0008; }
 
 .settings-actions { display: flex; justify-content: flex-end; margin-bottom: 12px; }
 .status-section h2, .settings-section h2 { margin-bottom: 15px; font-size: 16px; }

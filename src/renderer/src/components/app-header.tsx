@@ -1,3 +1,5 @@
+import type { PlayerViewMode } from '../../../shared/types';
+
 type AppHeaderProps = {
   title: string;
   subtitle: string;
@@ -22,10 +24,12 @@ export function AppHeader({ title, subtitle, closeLabel, onClose }: AppHeaderPro
 function IconButton({
   label,
   onClick,
+  disabled = false,
   children,
 }: {
   label: string;
   onClick: () => void;
+  disabled?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -33,6 +37,7 @@ function IconButton({
       className="icon-button"
       aria-label={label}
       title={label}
+      disabled={disabled}
       onClick={onClick}
     >
       {children}
@@ -56,6 +61,27 @@ export function KeyboardSettingsButton({ onClick }: { onClick: () => void }) {
   );
 }
 
+export function PlayerViewModeButton({
+  mode,
+  disabled,
+  onClick,
+}: {
+  mode: PlayerViewMode;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  const mini = mode === 'mini';
+  return (
+    <IconButton
+      label={mini ? '확장뷰로 확대' : '미니뷰로 축소'}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      {mini ? <ExpandIcon /> : <CollapseIcon />}
+    </IconButton>
+  );
+}
+
 function KeyboardIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -70,6 +96,22 @@ function SettingsIcon() {
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path d="M12 8.75A3.25 3.25 0 1 0 12 15.25 3.25 3.25 0 0 0 12 8.75Z" />
       <path d="M19.3 13.5a7.8 7.8 0 0 0 0-3l1.8-1.4-2-3.4-2.2.9a7.4 7.4 0 0 0-2.6-1.5L14 2.75h-4l-.3 2.35a7.4 7.4 0 0 0-2.6 1.5l-2.2-.9-2 3.4 1.8 1.4a7.8 7.8 0 0 0 0 3l-1.8 1.4 2 3.4 2.2-.9a7.4 7.4 0 0 0 2.6 1.5l.3 2.35h4l.3-2.35a7.4 7.4 0 0 0 2.6-1.5l2.2.9 2-3.4-1.8-1.4Z" />
+    </svg>
+  );
+}
+
+function ExpandIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="m14 10 7-7M16 3h5v5M10 14l-7 7M3 16v5h5" />
+    </svg>
+  );
+}
+
+function CollapseIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M21 3l-7 7M14 5v5h5M3 21l7-7M10 19v-5H5" />
     </svg>
   );
 }

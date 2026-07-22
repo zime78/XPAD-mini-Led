@@ -6,6 +6,8 @@ export type PlaybackState = 'playing' | 'paused' | 'stopped';
 
 export type KnobFineVolumeState = 'disabled' | 'pending' | 'active' | 'error';
 
+export type PlayerViewMode = 'expanded' | 'mini';
+
 export const PROFILE_IDS = [1, 2, 3, 4, 5] as const;
 export type ProfileId = (typeof PROFILE_IDS)[number];
 export const EDITABLE_PROFILE_IDS = [2, 3, 4, 5] as const satisfies readonly ProfileId[];

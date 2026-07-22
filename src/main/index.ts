@@ -20,9 +20,12 @@ import {
   KeyboardRuntimeStatus,
   KeyboardSettings,
   KeyboardSettingsSaveResult,
+  KEYBOARD_SLOTS,
+  KeyboardSlot,
   KnobKeymapBackup,
   MEDIA_KEY_CODES,
   MediaKeyCode,
+  PlayerViewMode,
   PROFILE_IDS,
   ProfileId,
   StatusSnapshot,
@@ -73,8 +76,13 @@ let activeVolumeFeedback: VolumeFeedback | null = null;
 let volumeFeedbackTimer: ReturnType<typeof setTimeout> | null = null;
 let profileSwitching = false;
 let profileSwitchError: string | null = null;
+let playerViewMode: PlayerViewMode = 'expanded';
 const hidDisabled = process.env.XPAD_DISABLE_HID === '1';
 const VOLUME_FEEDBACK_DURATION_MS = 1600;
+const PLAYER_WINDOW_SIZES: Record<PlayerViewMode, { width: number; height: number }> = {
+  expanded: { width: 680, height: 320 },
+  mini: { width: 300, height: 248 },
+};
 
 function resourcePath(...parts: string[]): string {
   const root = app.isPackaged ? process.resourcesPath : path.join(__dirname, '../..');
@@ -197,13 +205,10 @@ function openPlayerWindow(): void {
     playerWindow.focus();
     return;
   }
+  const size = PLAYER_WINDOW_SIZES[playerViewMode];
   playerWindow = new BrowserWindow({
-    width: 680,
-    height: 320,
-    minWidth: 680,
-    minHeight: 320,
-    maxWidth: 680,
-    maxHeight: 320,
+    width: size.width,
+    height: size.height,
     resizable: false,
     maximizable: false,
     fullscreenable: false,
@@ -213,6 +218,13 @@ function openPlayerWindow(): void {
   });
   playerWindow.on('closed', () => (playerWindow = null));
   loadAppWindow(playerWindow, 'player');
+}
+
+function setPlayerViewMode(mode: PlayerViewMode): PlayerViewMode {
+  playerViewMode = mode;
+  const size = PLAYER_WINDOW_SIZES[mode];
+  playerWindow?.setSize(size.width, size.height, true);
+  return playerViewMode;
 }
 
 function openSettingsWindow(): void {
@@ -421,6 +433,23 @@ async function testKeyboardAction(value: unknown): Promise<KeyboardActionResult>
   }
 }
 
+async function runPlayerAction(value: unknown): Promise<KeyboardActionResult> {
+  if (typeof value !== 'string' || !KEYBOARD_SLOTS.includes(value as KeyboardSlot)) {
+    return { ok: false, error: '지원하지 않는 버튼 위치입니다.' };
+  }
+  const status = currentStatus();
+  const profile = status.keyboardProfileState.profiles[status.keyboardProfileState.activeProfileId];
+  try {
+    await executeKeyboardAction(profile.assignments[value as KeyboardSlot]);
+    return { ok: true, error: null };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 async function pickApplication(): Promise<ApplicationSelection | null> {
   const owner = keyboardWindow;
   if (!owner) throw new Error('키보드 설정 창을 찾지 못했습니다.');
@@ -502,6 +531,21 @@ function registerIpc(): void {
       throw new Error('P1~P5 프로필만 선택할 수 있습니다.');
     }
     return switchKeyboardProfile(value as ProfileId);
+  });
+  ipcMain.handle('get-player-view-mode', (event) => {
+    requirePlayerWindow(event);
+    return playerViewMode;
+  });
+  ipcMain.handle('set-player-view-mode', (event, value: unknown) => {
+    requirePlayerWindow(event);
+    if (value !== 'expanded' && value !== 'mini') {
+      throw new Error('지원하지 않는 재생 창 모드입니다.');
+    }
+    return setPlayerViewMode(value);
+  });
+  ipcMain.handle('run-player-action', (event, slot: unknown) => {
+    requirePlayerWindow(event);
+    return runPlayerAction(slot);
   });
   ipcMain.handle('save-keyboard-settings', (event, next: KeyboardSettings) => {
     requireKeyboardWindow(event);

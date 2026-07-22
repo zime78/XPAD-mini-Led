@@ -1,5 +1,11 @@
 import { useEffect, useState } from 'react';
-import type { AppConfig, ProfileId, StatusSnapshot } from '../../shared/types';
+import type {
+  AppConfig,
+  KeyboardSlot,
+  PlayerViewMode,
+  ProfileId,
+  StatusSnapshot,
+} from '../../shared/types';
 import { AppHeader } from './components/app-header';
 import { KeyboardSettingsView } from './components/keyboard-settings-view';
 import { PlayerView } from './components/player-view';
@@ -18,6 +24,10 @@ export function App() {
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [saved, setSaved] = useState<AppConfig | null>(null);
   const [message, setMessage] = useState('');
+  const [playerViewMode, setPlayerViewMode] = useState<PlayerViewMode>('expanded');
+  const [viewModeChanging, setViewModeChanging] = useState(false);
+  const [pendingActionSlot, setPendingActionSlot] = useState<KeyboardSlot | null>(null);
+  const [playerActionError, setPlayerActionError] = useState('');
 
   useEffect(() => {
     document.title =
@@ -30,6 +40,9 @@ export function App() {
 
   useEffect(() => {
     void window.xpad.getStatus().then(setStatus);
+    if (view === 'player') {
+      void window.xpad.getPlayerViewMode().then(setPlayerViewMode);
+    }
     if (view === 'settings') {
       void window.xpad.getConfig().then((value) => {
         setConfig(value);
@@ -47,6 +60,32 @@ export function App() {
     const selectProfile = async (profileId: ProfileId) => {
       setStatus(await window.xpad.switchKeyboardProfile(profileId));
     };
+    const togglePlayerViewMode = async () => {
+      if (viewModeChanging) return;
+      setViewModeChanging(true);
+      setPlayerActionError('');
+      try {
+        const next = playerViewMode === 'expanded' ? 'mini' : 'expanded';
+        setPlayerViewMode(await window.xpad.setPlayerViewMode(next));
+      } catch (error) {
+        setPlayerActionError(errorMessage(error));
+      } finally {
+        setViewModeChanging(false);
+      }
+    };
+    const runPlayerAction = async (slot: KeyboardSlot) => {
+      if (pendingActionSlot) return;
+      setPendingActionSlot(slot);
+      setPlayerActionError('');
+      try {
+        const result = await window.xpad.runPlayerAction(slot);
+        if (!result.ok) setPlayerActionError(result.error ?? '버튼 동작을 실행하지 못했습니다.');
+      } catch (error) {
+        setPlayerActionError(errorMessage(error));
+      } finally {
+        setPendingActionSlot(null);
+      }
+    };
     return (
       <main className="app-shell player-screen">
         <PlayerView
@@ -54,6 +93,12 @@ export function App() {
           onOpenKeyboardSettings={() => void window.xpad.openKeyboardSettingsWindow()}
           onOpenSettings={() => void window.xpad.openSettingsWindow()}
           onSelectProfile={(profileId) => void selectProfile(profileId)}
+          viewMode={playerViewMode}
+          viewModeChanging={viewModeChanging}
+          pendingActionSlot={pendingActionSlot}
+          actionError={playerActionError}
+          onToggleViewMode={() => void togglePlayerViewMode()}
+          onRunAction={(slot) => void runPlayerAction(slot)}
         />
       </main>
     );
@@ -115,4 +160,8 @@ export function App() {
       />
     </main>
   );
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

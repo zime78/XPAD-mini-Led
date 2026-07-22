@@ -9,6 +9,8 @@ import type {
   KeyboardRuntimeStatus,
   KeyboardSettings,
   KeyboardSettingsSaveResult,
+  KeyboardSlot,
+  PlayerViewMode,
   ProfileId,
   StatusSnapshot,
 } from '../shared/types';
@@ -22,6 +24,12 @@ const api = {
     ipcRenderer.invoke('refresh-now-playing'),
   switchKeyboardProfile: (profileId: ProfileId): Promise<StatusSnapshot> =>
     ipcRenderer.invoke('switch-keyboard-profile', profileId),
+  getPlayerViewMode: (): Promise<PlayerViewMode> =>
+    ipcRenderer.invoke('get-player-view-mode'),
+  setPlayerViewMode: (mode: PlayerViewMode): Promise<PlayerViewMode> =>
+    ipcRenderer.invoke('set-player-view-mode', mode),
+  runPlayerAction: (slot: KeyboardSlot): Promise<KeyboardActionResult> =>
+    ipcRenderer.invoke('run-player-action', slot),
   openSettingsWindow: (): Promise<void> => ipcRenderer.invoke('open-settings-window'),
   closeSettingsWindow: (): Promise<void> => ipcRenderer.invoke('close-settings-window'),
   openKeyboardSettingsWindow: (): Promise<void> =>
