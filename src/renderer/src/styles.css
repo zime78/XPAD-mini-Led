@@ -35,18 +35,33 @@ h2 { margin: 0; }
 .icon-button { display: grid; flex: 0 0 auto; width: 40px; height: 40px; margin-top: 6px; padding: 9px; place-items: center; }
 .icon-button svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.6; }
 
-.hero { padding: 14px 20px 20px; border: 1px solid var(--border); border-radius: 18px; background: rgba(15, 23, 34, .86); box-shadow: 0 18px 60px rgba(0, 0, 0, .28); }
-.player-toolbar { display: flex; min-height: 40px; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.hero { padding: 11px 14px 14px; border: 1px solid var(--border); border-radius: 18px; background: rgba(15, 23, 34, .86); box-shadow: 0 18px 60px rgba(0, 0, 0, .28); }
+.player-toolbar { display: flex; min-height: 68px; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
 .player-toolbar .icon-button { margin-top: 0; }
 .player-toolbar-actions { display: flex; gap: 8px; }
+.player-toolbar-primary { display: flex; min-width: 0; align-items: center; gap: 10px; }
+.player-toolbar-separator { width: 1px; height: 52px; flex: 0 0 auto; background: #2b3c52; }
 .player-device-status { display: flex; align-items: center; gap: 6px; }
 .player-status-icon { display: inline-flex; width: 34px; height: 26px; align-items: center; justify-content: center; gap: 4px; border: 1px solid var(--border); border-radius: 8px; background: #0a111a; }
 .player-status-icon svg { width: 14px; height: 14px; fill: none; stroke: var(--text-muted); stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
 .player-status-icon[data-state='connected'] { color: var(--success); border-color: #24563a; }
 .player-status-icon[data-state='failed'] { color: var(--danger); border-color: #5f2734; }
 .player-status-mark { width: 7px; color: currentColor; font-size: 9px; font-weight: 800; line-height: 1; text-align: center; text-shadow: 0 0 6px currentColor; }
+.quick-profile { position: relative; min-width: 0; }
+.quick-profile-buttons { display: flex; gap: 4px; }
+.quick-profile-buttons button { position: relative; width: 36px; height: 25px; padding: 0; border: 2px solid #344860; border-radius: 8px; background: #091626; color: #9eb0c6; font-size: 10px; font-weight: 800; }
+.quick-profile-buttons button:hover:not(:disabled) { border-color: #60a5fa; color: #dbeafe; }
+.quick-profile-buttons button:disabled { opacity: .72; }
+.quick-profile-buttons button.active { border-color: #93c5fd; background: #1367df; color: #fff; box-shadow: 0 0 0 2px #2563eb55, 0 0 12px #3b82f688; }
+.quick-profile-buttons button.active:disabled { opacity: 1; }
+.quick-profile-active-mark { position: absolute; top: 3px; right: 4px; width: 5px; height: 5px; border-radius: 50%; background: #dbeafe; box-shadow: 0 0 5px #fff; }
+.quick-profile-assignments { display: grid; width: 280px; grid-template-columns: 1fr 1.2fr 1fr; gap: 5px; margin-top: 5px; }
+.quick-profile-assignment { display: flex; min-width: 0; height: 27px; align-items: center; justify-content: space-between; gap: 4px; padding: 3px 4px 3px 7px; border: 1px solid #263b54; border-radius: 8px; background: #071423; }
+.quick-profile-assignment > span { flex: 0 0 auto; color: #667b96; font-size: 7px; font-weight: 700; }
+.quick-profile-assignment > strong { min-width: 0; overflow: hidden; padding: 3px 6px; border: 1px solid #2f78ce; border-radius: 6px; background: #123f76; color: #eff6ff; font-size: 9px; line-height: 1; text-overflow: ellipsis; white-space: nowrap; }
+.quick-profile-error { position: absolute; right: 0; bottom: -13px; max-width: 236px; margin: 0; overflow: hidden; color: #fda4af; font-size: 7px; text-overflow: ellipsis; white-space: nowrap; }
 .player-content { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 22px; align-items: center; }
-.lcd-shell { width: 288px; padding: 18px 18px 30px; border-radius: 24px; background: linear-gradient(145deg, #303846, #0d1118); box-shadow: inset 0 0 0 2px #475569, inset 0 -10px 24px #06080c, 0 12px 28px #0008; }
+.lcd-shell { width: 288px; padding: 16px 18px 24px; border-radius: 24px; background: linear-gradient(145deg, #303846, #0d1118); box-shadow: inset 0 0 0 2px #475569, inset 0 -10px 24px #06080c, 0 12px 28px #0008; }
 .lcd-shell img, .preview-empty { display: block; width: 240px; height: 135px; border-radius: 5px; background: #05070a; image-rendering: auto; box-shadow: 0 0 0 2px #030406, 0 0 20px #3182ce2e; }
 .preview-empty { display: grid; place-items: center; color: var(--text-subtle); font-size: 12px; }
 .track-info { min-width: 0; }

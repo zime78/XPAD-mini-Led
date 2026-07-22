@@ -5,6 +5,7 @@ import type {
   KeyboardDeviceSnapshot,
   KnobFineVolumeState,
   KnobKeymapBackup,
+  ProfileId,
 } from '../../shared/types';
 import type { WorkerInMessage, WorkerOutMessage } from './device-worker';
 
@@ -19,11 +20,21 @@ export class DeviceHost extends EventEmitter {
       timer: NodeJS.Timeout;
     }
   >();
+  private profileRequests = new Map<
+    number,
+    {
+      resolve: (profileId: ProfileId) => void;
+      reject: (error: Error) => void;
+      timer: NodeJS.Timeout;
+    }
+  >();
   connected = false;
   protocolReady = false;
   knobFineVolumeState: KnobFineVolumeState = 'disabled';
   knobFineVolumeError: string | null = null;
   knobKeymapBackup: KnobKeymapBackup | undefined;
+  activeProfileId: ProfileId | null = null;
+  keyboardSnapshot: KeyboardDeviceSnapshot | null = null;
 
   start(enabled: boolean, backup?: KnobKeymapBackup): void {
     this.worker = new Worker(path.join(__dirname, 'device-worker.js'), {
@@ -35,8 +46,29 @@ export class DeviceHost extends EventEmitter {
         if (!request) return;
         this.keyboardRequests.delete(message.requestId);
         clearTimeout(request.timer);
-        if (message.snapshot) request.resolve(message.snapshot);
-        else request.reject(new Error(message.error ?? '키보드 프로필을 읽지 못했습니다.'));
+        if (message.snapshot) {
+          this.keyboardSnapshot = structuredClone(message.snapshot);
+          this.activeProfileId = message.snapshot.activeProfileId;
+          request.resolve(message.snapshot);
+        } else {
+          request.reject(new Error(message.error ?? '키보드 프로필을 읽지 못했습니다.'));
+        }
+        return;
+      }
+      if (message.type === 'keyboardProfileSelected') {
+        const request = this.profileRequests.get(message.requestId);
+        if (!request) return;
+        this.profileRequests.delete(message.requestId);
+        clearTimeout(request.timer);
+        if (message.profileId) {
+          this.activeProfileId = message.profileId;
+          if (this.keyboardSnapshot) {
+            this.keyboardSnapshot.activeProfileId = message.profileId;
+          }
+          request.resolve(message.profileId);
+        } else {
+          request.reject(new Error(message.error ?? '키보드 프로필을 전환하지 못했습니다.'));
+        }
         return;
       }
       const previousBackup = JSON.stringify(this.knobKeymapBackup);
@@ -45,6 +77,10 @@ export class DeviceHost extends EventEmitter {
       this.knobFineVolumeState = message.knobFineVolumeState;
       this.knobFineVolumeError = message.knobFineVolumeError;
       this.knobKeymapBackup = message.knobKeymapBackup;
+      this.activeProfileId = message.activeProfileId ?? null;
+      if (message.keyboardSnapshot) {
+        this.keyboardSnapshot = structuredClone(message.keyboardSnapshot);
+      }
       if (
         this.knobKeymapBackup &&
         JSON.stringify(this.knobKeymapBackup) !== previousBackup
@@ -59,7 +95,10 @@ export class DeviceHost extends EventEmitter {
       this.connected = false;
       this.protocolReady = false;
       this.knobFineVolumeState = 'disabled';
+      this.activeProfileId = null;
+      this.keyboardSnapshot = null;
       this.rejectKeyboardRequests('XPAD 장치 워커가 종료되었습니다.');
+      this.rejectProfileRequests('XPAD 장치 워커가 종료되었습니다.');
       this.emit('status');
     });
   }
@@ -96,10 +135,36 @@ export class DeviceHost extends EventEmitter {
     });
   }
 
+  selectKeyboardProfile(profileId: ProfileId): Promise<ProfileId> {
+    if (!this.worker || !this.connected || !this.protocolReady) {
+      return Promise.reject(new Error('XPAD Mini 연결과 프로토콜 준비가 필요합니다.'));
+    }
+    const requestId = ++this.requestSequence;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.profileRequests.delete(requestId);
+        reject(new Error('키보드 프로필 전환이 20초 안에 끝나지 않았습니다.'));
+      }, 20_000);
+      this.profileRequests.set(requestId, { resolve, reject, timer });
+      try {
+        this.worker?.postMessage({
+          type: 'selectKeyboardProfile',
+          requestId,
+          profileId,
+        } satisfies WorkerInMessage);
+      } catch (error) {
+        this.profileRequests.delete(requestId);
+        clearTimeout(timer);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      }
+    });
+  }
+
   shutdown(): Promise<void> {
     const worker = this.worker;
     this.worker = null;
     this.rejectKeyboardRequests('앱이 종료되어 키보드 프로필 읽기를 중단했습니다.');
+    this.rejectProfileRequests('앱이 종료되어 키보드 프로필 전환을 중단했습니다.');
     if (!worker) return Promise.resolve();
     return new Promise((resolve) => {
       worker.once('exit', () => resolve());
@@ -125,5 +190,13 @@ export class DeviceHost extends EventEmitter {
       request.reject(new Error(message));
     }
     this.keyboardRequests.clear();
+  }
+
+  private rejectProfileRequests(message: string): void {
+    for (const request of this.profileRequests.values()) {
+      clearTimeout(request.timer);
+      request.reject(new Error(message));
+    }
+    this.profileRequests.clear();
   }
 }

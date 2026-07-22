@@ -132,6 +132,11 @@ export interface KeyboardDeviceSnapshot {
   profiles: Record<ProfileId, KeyboardProfileSettings>;
 }
 
+export interface KeyboardProfileState extends KeyboardDeviceSnapshot {
+  switching: boolean;
+  error: string | null;
+}
+
 export interface KeyboardSettingsBackup {
   schemaVersion: 1;
   id: string;
@@ -217,6 +222,7 @@ export interface StatusSnapshot {
   previewDataUrl: string | null;
   knobFineVolumeState: KnobFineVolumeState;
   knobFineVolumeError: string | null;
+  keyboardProfileState: KeyboardProfileState;
 }
 
 export const EMPTY_TRACK: TrackInfo = {

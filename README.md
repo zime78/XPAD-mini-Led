@@ -7,8 +7,8 @@ macOS의 Spotify와 Apple Music에서 현재 재생 중인 곡을 읽어 Pulsar 
 
 - 별도 웹 드라이버(Bibimbap Web DRV) 없이 macOS에서 XPAD Mini LCD를 네이티브 USB HID로 직접 구동합니다.
 - 재생 중인 음악(곡명·아티스트·앨범·앨범아트·진행률)을 책상 위 상시 디스플레이로 보여줍니다.
-- LCD 프레임과 노브 좌/우 매핑은 RAM으로만 전송합니다. 펌웨어·LED·플래시 저장 영역과
-  다른 키는 건드리지 않으며, 앱 종료 시 노브 원본을 복원합니다.
+- LCD 프레임, 프로필 선택과 노브 좌/우 매핑은 RAM으로만 전송합니다. 펌웨어·LED·플래시
+  저장 영역과 다른 키 매핑은 건드리지 않으며, 앱 종료 시 노브 원본을 복원합니다.
 - 설정 없이 동작합니다 — 음악 앱과 장치를 자동 감지하고, 연결이 끊기면 자동 재연결합니다.
 
 ## 필수 장비
@@ -28,12 +28,15 @@ macOS의 Spotify와 Apple Music에서 현재 재생 중인 곡을 읽어 Pulsar 
 - XPAD 노브 한 칸을 실제 출력 단계와 맞춘 미세 볼륨 조절(한 칸당 1·2·3·5단계 설정)
 - 노브 조절 직후 실제 macOS 출력 볼륨을 LCD와 앱 미리보기에 퍼센트·막대로 표시하고
   마지막 입력 1.6초 후 곡 화면으로 자동 복귀
+- 재생 화면에서 P1~P5 실제 장치 프로필을 빠르게 전환하고 선택 프로필의 하단 버튼
+  3개 동작을 즉시 표시
 - XPAD Mini 자동 재연결
 - 로그인 시 자동 실행 옵션
 - HID 명령 `0x25`를 사용한 RAM 전용 LCD 스트리밍
+- `0x02` SystemInfo readback을 사용하는 RAM 전용 P1~P5 프로필 전환
 - `0x10` KeyInfo를 사용한 Profile 1 노브 좌/우 RAM 임시 매핑과 종료 시 원복
 
-일반 Mac 키보드 볼륨키, XPAD 노브 클릭(Mute), 다른 XPAD 키, 펌웨어, LED 설정,
+일반 Mac 키보드 볼륨키, XPAD 노브 클릭(Mute), 다른 XPAD 키 매핑, 펌웨어, LED 설정,
 장치 플래시 저장 영역은 변경하지 않습니다. 앱이 종료되면 노브는 원래 Vol-/Vol+로
 복원되고 장치의 기본 화면이 다시 그려집니다.
 
@@ -110,7 +113,7 @@ git에 커밋되는 파일 기준의 워크트리입니다 (생성물 `out/`·`d
 │  │     ├─ device-host.ts          # 디바이스 워커 스레드 프록시 (main 쪽)
 │  │     ├─ device-worker.ts        # HID I/O 워커 — 220ms 주기 프레임 스트리밍
 │  │     ├─ hid.ts                  # XPAD Mini bulk 채널 열기·자동 재연결
-│  │     └─ protocol.ts             # ScreenInfo 0x02, 노브 KeyInfo 0x10, Display 0x25
+│  │     └─ protocol.ts             # ScreenInfo/프로필 0x02, 노브 KeyInfo 0x10, Display 0x25
 │  ├─ preload/
 │  │  └─ index.ts                   # contextBridge — window.xpad IPC API 노출
 │  └─ renderer/

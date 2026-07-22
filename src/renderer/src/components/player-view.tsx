@@ -1,6 +1,7 @@
-import type { StatusSnapshot } from '../../../shared/types';
+import type { ProfileId, StatusSnapshot } from '../../../shared/types';
 import { KeyboardSettingsButton, SettingsButton } from './app-header';
 import { PlayerStatus } from './player-status';
+import { QuickProfileSwitch } from './quick-profile-switch';
 
 const SERVICE_NAMES = {
   spotify: 'Spotify',
@@ -18,19 +19,25 @@ type PlayerViewProps = {
   status: StatusSnapshot;
   onOpenKeyboardSettings: () => void;
   onOpenSettings: () => void;
+  onSelectProfile: (profileId: ProfileId) => void;
 };
 
 export function PlayerView({
   status,
   onOpenKeyboardSettings,
   onOpenSettings,
+  onSelectProfile,
 }: PlayerViewProps) {
   const track = status.track;
 
   return (
     <section className="hero" aria-labelledby="current-track-title">
       <div className="player-toolbar">
-        <PlayerStatus status={status} />
+        <div className="player-toolbar-primary">
+          <PlayerStatus status={status} />
+          <span className="player-toolbar-separator" aria-hidden="true" />
+          <QuickProfileSwitch status={status} onSelect={onSelectProfile} />
+        </div>
         <div className="player-toolbar-actions">
           <KeyboardSettingsButton onClick={onOpenKeyboardSettings} />
           <SettingsButton onClick={onOpenSettings} />

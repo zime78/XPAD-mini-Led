@@ -23,6 +23,8 @@ import {
   KnobKeymapBackup,
   MEDIA_KEY_CODES,
   MediaKeyCode,
+  PROFILE_IDS,
+  ProfileId,
   StatusSnapshot,
   TrackInfo,
 } from '../shared/types';
@@ -69,6 +71,8 @@ let pendingRender: {
 let rendering = false;
 let activeVolumeFeedback: VolumeFeedback | null = null;
 let volumeFeedbackTimer: ReturnType<typeof setTimeout> | null = null;
+let profileSwitching = false;
+let profileSwitchError: string | null = null;
 const hidDisabled = process.env.XPAD_DISABLE_HID === '1';
 const VOLUME_FEEDBACK_DURATION_MS = 1600;
 
@@ -89,6 +93,9 @@ function trayIcon(): Electron.NativeImage {
 
 function currentStatus(): StatusSnapshot {
   const fineVolumeError = fineVolumeController?.lastError ?? null;
+  const deviceKeyboardSettings = deviceHost?.keyboardSnapshot
+    ? mergeKeyboardDeviceSnapshot(config.keyboardSettings, deviceHost.keyboardSnapshot)
+    : config.keyboardSettings;
   return {
     deviceConnected: deviceHost?.connected ?? false,
     protocolReady: deviceHost?.protocolReady ?? false,
@@ -99,6 +106,13 @@ function currentStatus(): StatusSnapshot {
       ? 'error'
       : (deviceHost?.knobFineVolumeState ?? 'disabled'),
     knobFineVolumeError: fineVolumeError ?? deviceHost?.knobFineVolumeError ?? null,
+    keyboardProfileState: {
+      activeProfileId:
+        deviceHost?.activeProfileId ?? deviceKeyboardSettings.activeProfileId,
+      profiles: structuredClone(deviceKeyboardSettings.profiles),
+      switching: profileSwitching,
+      error: profileSwitchError,
+    },
   };
 }
 
@@ -342,6 +356,34 @@ function saveKeyboardSettings(next: KeyboardSettings): KeyboardSettingsSaveResul
   return { settings: structuredClone(settings), runtimeStatus };
 }
 
+function syncKeyboardActiveProfile(profileId: ProfileId): void {
+  if (config.keyboardSettings.activeProfileId === profileId) return;
+  const keyboardSettings = {
+    ...config.keyboardSettings,
+    activeProfileId: profileId,
+  };
+  config = saveConfig({ ...config, keyboardSettings });
+  keyActionRouter.selectProfile(profileId);
+}
+
+async function switchKeyboardProfile(profileId: ProfileId): Promise<StatusSnapshot> {
+  if (profileSwitching) return currentStatus();
+  profileSwitching = true;
+  profileSwitchError = null;
+  broadcastStatus();
+  try {
+    requireDeviceSettingsReady();
+    const selectedProfileId = await deviceHost.selectKeyboardProfile(profileId);
+    syncKeyboardActiveProfile(selectedProfileId);
+  } catch (error) {
+    profileSwitchError = error instanceof Error ? error.message : String(error);
+  } finally {
+    profileSwitching = false;
+    broadcastStatus();
+  }
+  return currentStatus();
+}
+
 async function executeKeyboardAction(action: KeyboardAction): Promise<void> {
   if (action.type === 'key') {
     if (!MEDIA_KEY_CODES.includes(action.keyCode as MediaKeyCode)) {
@@ -421,6 +463,13 @@ function requireKeyboardWindow(event: Electron.IpcMainInvokeEvent): void {
   }
 }
 
+function requirePlayerWindow(event: Electron.IpcMainInvokeEvent): void {
+  const requester = BrowserWindow.fromWebContents(event.sender);
+  if (!playerWindow || requester !== playerWindow) {
+    throw new Error('재생 창에서만 사용할 수 있는 요청입니다.');
+  }
+}
+
 function registerIpc(): void {
   ipcMain.handle('get-status', () => currentStatus());
   ipcMain.handle('get-config', () => config);
@@ -444,7 +493,15 @@ function registerIpc(): void {
     requireKeyboardWindow(event);
     requireDeviceSettingsReady();
     const snapshot = await deviceHost.readKeyboardProfiles();
+    syncKeyboardActiveProfile(snapshot.activeProfileId);
     return mergeKeyboardDeviceSnapshot(config.keyboardSettings, snapshot);
+  });
+  ipcMain.handle('switch-keyboard-profile', async (event, value: unknown) => {
+    requirePlayerWindow(event);
+    if (typeof value !== 'number' || !PROFILE_IDS.includes(value as ProfileId)) {
+      throw new Error('P1~P5 프로필만 선택할 수 있습니다.');
+    }
+    return switchKeyboardProfile(value as ProfileId);
   });
   ipcMain.handle('save-keyboard-settings', (event, next: KeyboardSettings) => {
     requireKeyboardWindow(event);
@@ -539,6 +596,9 @@ if (!gotLock) {
         protocolReady: deviceHost.protocolReady,
         knobFineVolumeState: deviceHost.knobFineVolumeState,
       });
+      if (deviceHost.activeProfileId) {
+        syncKeyboardActiveProfile(deviceHost.activeProfileId);
+      }
       broadcastStatus();
     });
     deviceHost.on('knob-backup', storeKnobKeymapBackup);

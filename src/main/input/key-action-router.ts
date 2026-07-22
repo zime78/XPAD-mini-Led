@@ -5,6 +5,7 @@ import type {
   KeyboardRuntimeStatus,
   KeyboardSettings,
   KeyboardSlot,
+  ProfileId,
 } from '../../shared/types';
 
 const SHORTCUTS: Record<KeyboardSlot, string> = {
@@ -71,6 +72,14 @@ export class KeyActionRouter extends EventEmitter {
       deviceApplySupported: false,
       deviceApplyReason: KEYBOARD_DEVICE_APPLY_REASON,
     };
+  }
+
+  selectProfile(profileId: ProfileId): KeyboardRuntimeStatus {
+    if (this.settings) {
+      this.settings.activeProfileId = profileId;
+      this.emit('status');
+    }
+    return this.status;
   }
 
   dispose(): void {

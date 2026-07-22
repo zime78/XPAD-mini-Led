@@ -5,6 +5,10 @@
 
 ## 문서 목록
 
+- [재생 화면 P1~P5 단축 전환 GUI와 실기기 검증](./plan/profile-quick-switch/GUI.md)
+  - 별도 제목 없이 P1~P5 버튼과 선택 프로필 하단 세 키를 표시하는 구성
+  - `0x02` RAM 프로필 선택·SystemInfo readback·F16~F18 로컬 라우터 동기화
+  - 서명 앱에서 P2→P3 전환과 P2 복구를 확인한 구현 화면
 - [키보드 설정 및 macOS 앱 실행 기능 계획·구현 현황](./plan/keyboard-settings/PLAN.md)
   - 재생 창 키보드 아이콘과 전용 설정 창 GUI 시안
   - Profile 1 고정 음악 제어와 Profile 2~5 하단 키의 음악 제어/앱 실행 UX

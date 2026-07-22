@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { AppConfig, StatusSnapshot } from '../../shared/types';
+import type { AppConfig, ProfileId, StatusSnapshot } from '../../shared/types';
 import { AppHeader } from './components/app-header';
 import { KeyboardSettingsView } from './components/keyboard-settings-view';
 import { PlayerView } from './components/player-view';
@@ -44,12 +44,16 @@ export function App() {
   }
 
   if (view === 'player') {
+    const selectProfile = async (profileId: ProfileId) => {
+      setStatus(await window.xpad.switchKeyboardProfile(profileId));
+    };
     return (
       <main className="app-shell player-screen">
         <PlayerView
           status={status}
           onOpenKeyboardSettings={() => void window.xpad.openKeyboardSettingsWindow()}
           onOpenSettings={() => void window.xpad.openSettingsWindow()}
+          onSelectProfile={(profileId) => void selectProfile(profileId)}
         />
       </main>
     );

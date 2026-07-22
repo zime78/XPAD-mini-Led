@@ -3,6 +3,7 @@ import type {
   KeyboardDeviceSnapshot,
   KnobFineVolumeState,
   KnobKeymapBackup,
+  ProfileId,
 } from '../../shared/types';
 import { XpadDevice } from './hid';
 import { XpadProtocol } from './protocol';
@@ -15,6 +16,7 @@ export type WorkerInMessage =
       backup?: KnobKeymapBackup;
     }
   | { type: 'readKeyboardProfiles'; requestId: number }
+  | { type: 'selectKeyboardProfile'; requestId: number; profileId: ProfileId }
   | { type: 'shutdown' };
 
 export type WorkerOutMessage =
@@ -25,11 +27,19 @@ export type WorkerOutMessage =
       knobFineVolumeState: KnobFineVolumeState;
       knobFineVolumeError: string | null;
       knobKeymapBackup?: KnobKeymapBackup;
+      activeProfileId?: ProfileId;
+      keyboardSnapshot?: KeyboardDeviceSnapshot;
     }
   | {
       type: 'keyboardProfiles';
       requestId: number;
       snapshot?: KeyboardDeviceSnapshot;
+      error?: string;
+    }
+  | {
+      type: 'keyboardProfileSelected';
+      requestId: number;
+      profileId?: ProfileId;
       error?: string;
     };
 
@@ -52,6 +62,7 @@ let knobFineVolumeState: KnobFineVolumeState = knobEnabled ? 'pending' : 'disabl
 let knobFineVolumeError: string | null = null;
 let knobConfigVersion = 0;
 let knobQueue = Promise.resolve();
+let keyboardSnapshot: KeyboardDeviceSnapshot | null = null;
 
 function reportStatus(): void {
   port!.postMessage({
@@ -61,6 +72,8 @@ function reportStatus(): void {
     knobFineVolumeState,
     knobFineVolumeError,
     ...(knobBackup ? { knobKeymapBackup: knobBackup } : {}),
+    ...(protocol.activeProfileId ? { activeProfileId: protocol.activeProfileId } : {}),
+    ...(keyboardSnapshot ? { keyboardSnapshot } : {}),
   } satisfies WorkerOutMessage);
 }
 
@@ -80,11 +93,13 @@ device.on('connect', reportStatus);
 device.on('disconnect', () => {
   knobFineVolumeState = knobEnabled ? 'pending' : 'disabled';
   knobFineVolumeError = null;
+  keyboardSnapshot = null;
   reportStatus();
 });
 protocol.onReady = () => {
   reportStatus();
   queueKnobConfiguration();
+  queueKeyboardProfileSync();
 };
 
 function pauseStreaming(): void {
@@ -137,14 +152,64 @@ function queueKeyboardProfileRead(requestId: number): void {
       try {
         if (!protocol.ready) throw new Error('XPAD 프로토콜이 준비되지 않았습니다.');
         const snapshot = await protocol.readKeyboardProfiles();
+        keyboardSnapshot = snapshot;
         port!.postMessage({
           type: 'keyboardProfiles',
           requestId,
           snapshot,
         } satisfies WorkerOutMessage);
+        reportStatus();
       } catch (error) {
         port!.postMessage({
           type: 'keyboardProfiles',
+          requestId,
+          error: error instanceof Error ? error.message : String(error),
+        } satisfies WorkerOutMessage);
+      } finally {
+        resumeStreaming();
+      }
+    });
+}
+
+function queueKeyboardProfileSync(): void {
+  knobQueue = knobQueue
+    .catch(() => {})
+    .then(async () => {
+      pauseStreaming();
+      try {
+        if (!protocol.ready) return;
+        keyboardSnapshot = await protocol.readKeyboardProfiles();
+        reportStatus();
+      } catch (error) {
+        console.error('[worker] keyboard profile sync failed', error);
+      } finally {
+        resumeStreaming();
+      }
+    });
+}
+
+function queueKeyboardProfileSelection(requestId: number, profileId: ProfileId): void {
+  knobQueue = knobQueue
+    .catch(() => {})
+    .then(async () => {
+      pauseStreaming();
+      try {
+        const selectedProfileId = await protocol.selectProfile(profileId);
+        if (keyboardSnapshot) {
+          keyboardSnapshot = {
+            ...keyboardSnapshot,
+            activeProfileId: selectedProfileId,
+          };
+        }
+        port!.postMessage({
+          type: 'keyboardProfileSelected',
+          requestId,
+          profileId: selectedProfileId,
+        } satisfies WorkerOutMessage);
+        reportStatus();
+      } catch (error) {
+        port!.postMessage({
+          type: 'keyboardProfileSelected',
           requestId,
           error: error instanceof Error ? error.message : String(error),
         } satisfies WorkerOutMessage);
@@ -164,6 +229,8 @@ port.on('message', (message: WorkerInMessage) => {
     queueKnobConfiguration();
   } else if (message.type === 'readKeyboardProfiles') {
     queueKeyboardProfileRead(message.requestId);
+  } else if (message.type === 'selectKeyboardProfile') {
+    queueKeyboardProfileSelection(message.requestId, message.profileId);
   } else if (message.type === 'shutdown') {
     void shutdown();
   }

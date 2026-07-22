@@ -16,6 +16,10 @@ import {
   StatusSnapshot,
 } from '../../../shared/types';
 import { AppHeader } from './app-header';
+import {
+  keyboardActionLabel,
+  keyboardKeyCodeLabel,
+} from '../keyboard-action-label';
 
 const SLOT_LABELS: Record<KeyboardSlot, string> = {
   left: '왼쪽 버튼',
@@ -279,7 +283,7 @@ export function KeyboardSettingsView({ status, onClose }: KeyboardSettingsViewPr
       setMessage(
         selectedAction.type === 'launch-app'
           ? `${selectedAction.appName} 앱을 실행했습니다.`
-          : `${actionLabel(selectedAction)} 동작을 실행했습니다.`
+          : `${keyboardActionLabel(selectedAction)} 동작을 실행했습니다.`
       );
     } catch (reason) {
       setError(errorMessage(reason));
@@ -477,12 +481,12 @@ export function KeyboardSettingsView({ status, onClose }: KeyboardSettingsViewPr
                       key={slot}
                       className={selectedSlot === slot ? 'device-key selected' : 'device-key'}
                       aria-pressed={selectedSlot === slot}
-                      aria-label={`${SLOT_LABELS[slot]}, 현재 동작 ${actionLabel(action)}`}
-                      title={actionLabel(action)}
+                      aria-label={`${SLOT_LABELS[slot]}, 현재 동작 ${keyboardActionLabel(action)}`}
+                      title={keyboardActionLabel(action)}
                       onClick={() => setSelectedSlot(slot)}
                     >
                       <small>{SLOT_LABELS[slot]}</small>
-                      <strong>{actionLabel(action)}</strong>
+                      <strong>{keyboardActionLabel(action)}</strong>
                       {selectedSlot === slot && <span>선택됨</span>}
                     </button>
                   );
@@ -537,7 +541,7 @@ export function KeyboardSettingsView({ status, onClose }: KeyboardSettingsViewPr
                     {KEY_GROUPS.map((group) => (
                       <optgroup key={group.label} label={group.label}>
                         {group.keys.map((keyCode) => (
-                          <option key={keyCode} value={keyCode}>{keyCodeLabel(keyCode)}</option>
+                          <option key={keyCode} value={keyCode}>{keyboardKeyCodeLabel(keyCode)}</option>
                         ))}
                       </optgroup>
                     ))}
@@ -771,52 +775,8 @@ export function KeyboardSettingsView({ status, onClose }: KeyboardSettingsViewPr
   );
 }
 
-function actionLabel(action: KeyboardAction): string {
-  if (action.type === 'key') return keyCodeLabel(action.keyCode);
-  if (action.type === 'launch-app') return `${action.appName} 실행`;
-  return '미지원';
-}
-
 function isMediaKeyCode(keyCode: KeyboardKeyCode): keyCode is MediaKeyCode {
   return MEDIA_KEY_CODES.includes(keyCode as MediaKeyCode);
-}
-
-function keyCodeLabel(keyCode: KeyboardKeyCode): string {
-  if (keyCode.startsWith('Key')) return keyCode.slice(3);
-  if (keyCode.startsWith('Digit')) return keyCode.slice(5);
-  if (/^F\d+$/.test(keyCode)) return keyCode;
-  const labels: Partial<Record<KeyboardKeyCode, string>> = {
-    Minus: '-',
-    Equal: '=',
-    BracketLeft: '[',
-    BracketRight: ']',
-    Backslash: '\\',
-    Semicolon: ';',
-    Quote: "'",
-    Backquote: '`',
-    Comma: ',',
-    Period: '.',
-    Slash: '/',
-    Space: 'Space',
-    Enter: 'Enter',
-    Tab: 'Tab',
-    Escape: 'Esc',
-    Backspace: 'Backspace',
-    Delete: 'Delete',
-    CapsLock: 'Caps Lock',
-    ArrowUp: '↑ 방향키',
-    ArrowDown: '↓ 방향키',
-    ArrowLeft: '← 방향키',
-    ArrowRight: '→ 방향키',
-    Home: 'Home',
-    End: 'End',
-    PageUp: 'Page Up',
-    PageDown: 'Page Down',
-    MediaTrackPrevious: '이전 곡',
-    MediaPlayPause: '재생/일시정지',
-    MediaTrackNext: '다음 곡',
-  };
-  return labels[keyCode] ?? keyCode;
 }
 
 function shortcutStateLabel(state: KeyboardRuntimeStatus['shortcutState']): string {

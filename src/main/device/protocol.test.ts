@@ -36,6 +36,29 @@ describe('XpadProtocol.readKeyboardProfiles', () => {
   });
 });
 
+describe('XpadProtocol.selectProfile', () => {
+  it('SystemInfo RAM 값만 바꾸고 readback으로 선택 프로필을 검증한다', async () => {
+    const bulk = new FakeBulk(1);
+    const device = new EventEmitter() as EventEmitter & {
+      bulk: FakeBulk;
+      connected: boolean;
+    };
+    device.bulk = bulk;
+    device.connected = true;
+    const protocol = new XpadProtocol(device as unknown as XpadDevice);
+
+    device.emit('connect');
+    await vi.waitFor(() => expect(protocol.ready).toBe(true));
+    const selected = await protocol.selectProfile(5);
+
+    expect(selected).toBe(5);
+    expect(protocol.activeProfileId).toBe(5);
+    expect(bulk.profileIndex).toBe(4);
+    expect(bulk.writtenSelections).toEqual([4]);
+    expect(bulk.saveCommandSeen).toBe(false);
+  });
+});
+
 class FakeBulk extends EventEmitter {
   writtenSelections: number[] = [];
   saveCommandSeen = false;

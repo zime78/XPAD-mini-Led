@@ -51,12 +51,14 @@ export interface KnobMappingResult {
 
 /**
  * Minimal Sayo API v2 client for the XPAD Mini.
- * It verifies ScreenInfo, writes RGB565 frames, and can temporarily map the
- * two knob directions through KeyInfo. Save (0x0D), flash, LED and bootloader
- * commands remain intentionally absent, so all writes are RAM-only.
+ * It verifies ScreenInfo, selects the active RAM profile, writes RGB565 frames,
+ * and can temporarily map the two knob directions through KeyInfo. Save (0x0D),
+ * flash, LED and bootloader commands remain intentionally absent, so all writes
+ * are RAM-only.
  */
 export class XpadProtocol {
   private _ready = false;
+  private _activeProfileId: ProfileId | null = null;
   private lastFrame: Buffer | null = null;
   private framesUntilFull = 0;
   private lastLcdWrite = 0;
@@ -75,8 +77,13 @@ export class XpadProtocol {
     return this._ready;
   }
 
+  get activeProfileId(): ProfileId | null {
+    return this._activeProfileId;
+  }
+
   private reset(): void {
     this._ready = false;
+    this._activeProfileId = null;
     this.lastFrame = null;
     this.framesUntilFull = 0;
     this.lastLcdWrite = 0;
@@ -94,6 +101,13 @@ export class XpadProtocol {
       if (width !== LCD_WIDTH || height !== LCD_HEIGHT) {
         console.error(`[protocol] unexpected screen ${width}x${height}`);
         return;
+      }
+      try {
+        this._activeProfileId = (
+          profileIndexFromSystemInfo(packet.subarray(8, 8 + SYSTEM_INFO_SIZE)) + 1
+        ) as ProfileId;
+      } catch {
+        this._activeProfileId = null;
       }
       this._ready = true;
       console.log(`[protocol] ScreenInfo ${width}x${height} — RAM streaming ready`);
@@ -247,6 +261,24 @@ export class XpadProtocol {
     };
   }
 
+  async selectProfile(profileId: ProfileId): Promise<ProfileId> {
+    if (!this._ready) throw new Error('XPAD 프로토콜이 준비되지 않았습니다.');
+    if (!PROFILE_IDS.includes(profileId)) {
+      throw new Error(`잘못된 프로필입니다: ${profileId}`);
+    }
+
+    const systemInfo = await this.readSystemInfoWithRetry();
+    if (!systemInfo) throw new Error('XPAD SystemInfo를 읽지 못했습니다.');
+    const profileIndex = profileId - 1;
+    if (profileIndexFromSystemInfo(systemInfo) === profileIndex) {
+      this._activeProfileId = profileId;
+      return profileId;
+    }
+
+    await this.switchProfile(systemInfo, profileIndex);
+    return profileId;
+  }
+
   private async switchProfile(systemInfo: Buffer, profileIndex: number): Promise<Buffer> {
     if (profileIndex < 0 || profileIndex >= PROFILE_IDS.length) {
       throw new Error(`잘못된 프로필 인덱스입니다: ${profileIndex}`);
@@ -265,6 +297,7 @@ export class XpadProtocol {
     if (!readback || profileIndexFromSystemInfo(readback) !== profileIndex) {
       throw new Error(`Profile ${profileIndex + 1} 전환 readback 검증에 실패했습니다.`);
     }
+    this._activeProfileId = (profileIndex + 1) as ProfileId;
     return readback;
   }
 

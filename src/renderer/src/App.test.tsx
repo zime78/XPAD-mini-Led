@@ -29,6 +29,19 @@ const keyboardRuntime: KeyboardRuntimeStatus = {
   deviceApplyReason: '프로파일 장치 주소 지정 프로토콜 확인 필요',
 };
 
+const keyboardSettings = createDefaultKeyboardSettings();
+keyboardSettings.enabled = true;
+keyboardSettings.activeProfileId = 3;
+keyboardSettings.profiles[3].assignments = {
+  left: { type: 'key', keyCode: 'KeyQ' },
+  center: {
+    type: 'launch-app',
+    appName: 'Safari',
+    appPath: '/Applications/Safari.app',
+  },
+  right: { type: 'key', keyCode: 'F5' },
+};
+
 const status: StatusSnapshot = {
   deviceConnected: true,
   protocolReady: true,
@@ -46,6 +59,12 @@ const status: StatusSnapshot = {
   previewDataUrl: null,
   knobFineVolumeState: 'active',
   knobFineVolumeError: null,
+  keyboardProfileState: {
+    activeProfileId: 3,
+    profiles: keyboardSettings.profiles,
+    switching: false,
+    error: null,
+  },
 };
 
 describe('XPAD Mini Now Playing 화면', () => {
@@ -58,6 +77,13 @@ describe('XPAD Mini Now Playing 화면', () => {
       getConfig: vi.fn().mockResolvedValue(config),
       setConfig: vi.fn().mockImplementation(async (next) => next),
       refreshNowPlaying: vi.fn().mockResolvedValue(status),
+      switchKeyboardProfile: vi.fn().mockImplementation(async (profileId) => ({
+        ...status,
+        keyboardProfileState: {
+          ...status.keyboardProfileState,
+          activeProfileId: profileId,
+        },
+      })),
       openSettingsWindow: vi.fn().mockResolvedValue(undefined),
       closeSettingsWindow: vi.fn().mockResolvedValue(undefined),
       openKeyboardSettingsWindow: vi.fn().mockResolvedValue(undefined),
@@ -105,13 +131,15 @@ describe('XPAD Mini Now Playing 화면', () => {
     vi.restoreAllMocks();
   });
 
-  it('기본 화면에는 재생 정보와 키보드/일반 설정 아이콘만 표시한다', async () => {
+  it('기본 화면에는 재생 정보, 빠른 프로파일과 설정 아이콘을 표시한다', async () => {
     render(<App />);
 
     const playerPanel = await screen.findByRole('region', { name: "Say You Won't Let Go" });
 
     expect(within(playerPanel).getByRole('button', { name: '설정 열기' })).toBeTruthy();
     expect(within(playerPanel).getByRole('button', { name: '키보드 설정 열기' })).toBeTruthy();
+    expect(within(playerPanel).getAllByRole('button', { name: /Profile [1-5]/ })).toHaveLength(5);
+    expect(within(playerPanel).queryByText('QUICK PROFILE')).toBeNull();
     expect(screen.queryByRole('heading', { name: 'Now Playing' })).toBeNull();
     expect(screen.queryByText('PULSAR LAB XPAD MINI')).toBeNull();
     expect(
@@ -119,6 +147,41 @@ describe('XPAD Mini Now Playing 화면', () => {
     ).toBeNull();
     expect(screen.queryByText('USB 장치')).toBeNull();
     expect(screen.queryByRole('heading', { name: '표시 설정' })).toBeNull();
+  });
+
+  it('선택 프로파일과 등록 키 3개를 표시하고 다른 프로파일로 전환한다', async () => {
+    render(<App />);
+
+    const playerPanel = await screen.findByRole('region', { name: "Say You Won't Let Go" });
+    const profile3 = within(playerPanel).getByRole('button', { name: 'Profile 3' });
+    const assignments = within(playerPanel).getByLabelText('Profile 3 등록 키');
+
+    expect(profile3.getAttribute('aria-pressed')).toBe('true');
+    expect(within(assignments).getByText('Q')).toBeTruthy();
+    expect(within(assignments).getByText('Safari')).toBeTruthy();
+    expect(within(assignments).getByText('F5')).toBeTruthy();
+
+    fireEvent.click(within(playerPanel).getByRole('button', { name: 'Profile 4' }));
+
+    await waitFor(() => expect(window.xpad.switchKeyboardProfile).toHaveBeenCalledWith(4));
+    await waitFor(() => {
+      expect(
+        within(playerPanel).getByRole('button', { name: 'Profile 4' }).getAttribute('aria-pressed')
+      ).toBe('true');
+    });
+  });
+
+  it('장치가 준비되지 않았거나 전환 중이면 프로파일 선택을 차단한다', async () => {
+    window.xpad.getStatus = vi.fn().mockResolvedValue({
+      ...status,
+      protocolReady: false,
+    });
+    render(<App />);
+
+    const profile1 = await screen.findByRole('button', { name: 'Profile 1' });
+    expect((profile1 as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(profile1);
+    expect(window.xpad.switchKeyboardProfile).not.toHaveBeenCalled();
   });
 
   it('설정 아이콘으로 별도 설정 창을 요청하고 재생 화면은 유지한다', async () => {

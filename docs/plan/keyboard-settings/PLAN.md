@@ -1,6 +1,6 @@
 # XPAD Mini 키보드 설정·프로파일·백업 기능 계획
 
-- 상태: P1 고정 음악 제어, P2~P5 실제 장치 읽기·로컬 설정·백업·단축 동작 구현 완료, XPAD 일반 키 HID 쓰기는 안전 게이트로 보류
+- 상태: P1 고정 음악 제어, P2~P5 실제 장치 읽기·로컬 설정·백업·단축 동작과 재생 화면 P1~P5 실제 전환 구현 완료, XPAD 일반 키 HID 쓰기는 안전 게이트로 보류
 - 작성일: 2026-07-22
 - 대상: macOS용 `XPAD Mini Now Playing`
 - 구현 범위: 단계 1~4와 dev UI 검증 완료. 단계 0·5의 일반 키 HID 적용은 프로토콜 근거와 안전 경계 승인 전까지 비활성화한다.
@@ -26,6 +26,7 @@
 | 지원 키 변경·macOS `.app` 실행 | 완료 | 일반/탐색/기능/미디어 키 allowlist, `music/playback-controls.ts`, `input/key-action-router.ts`, native 앱 선택 IPC |
 | 이름·설명 사용자 백업 최대 10개 | 완료 | `keyboard-backups.ts`, 최대 수량·정확 복원·손상 파일 비파괴 테스트 |
 | F16~F18 로컬 라우팅 | 완료 | 사용자가 활성화한 경우에만 등록하며 F19/F20은 등록·해제하지 않음 |
+| 재생 화면 P1~P5 실제 전환 | 완료 | `0x02` RAM 선택·SystemInfo readback 후 선택 프로필을 F16~F18 로컬 라우터와 동기화 |
 | 하단 3버튼의 XPAD HID 키맵 변경 | 보류 | P1은 쓰기 금지로 고정하고 P2~P5 실제 읽기는 완료. 일반 키 쓰기 전체 rollback 미검증으로 UI의 `장치에 적용`을 비활성화하고 이유 표시 |
 | 볼륨·노브 비간섭 | 완료 | 키보드 전용 저장 IPC는 `fineVolume*`, `knobKeymapBackup`, 노브 장치 경로를 호출하지 않음 |
 
@@ -44,7 +45,9 @@
 - 각 키에 영문·숫자·기호·기본/탐색/기능 키, `이전 곡`·`재생/일시정지`·`다음 곡`, 또는 사용자가 선택한 macOS 애플리케이션 실행을 지정한다.
 - 현재 Profile 2~5 설정을 이름과 설명을 입력해 사용자 백업으로 보관한다.
 - 최대 10개 사용자 백업 중 하나를 선택해 당시의 Profile 2~5, 앱 경로, 활성 프로파일을 편집 화면에 그대로 불러온다. Profile 1은 복원 데이터와 무관하게 고정값을 유지한다.
-- 복원 내용을 검토한 뒤 `로컬 설정 저장`으로 활성 프로파일과 F16~F18 라우팅을 갱신한다. XPAD 장치 적용은 안전 게이트가 열릴 때까지 비활성화한다.
+- 복원 내용을 검토한 뒤 `로컬 설정 저장`으로 F16~F18 라우팅 설정을 갱신한다. 재생 화면에서
+  실제 P1~P5를 전환하거나 장치를 다시 연결하면 SystemInfo readback 프로필이 라우터의
+  활성 프로필이 된다. XPAD 일반 키 적용은 안전 게이트가 열릴 때까지 비활성화한다.
 
 장치가 준비되면 UI는 모든 프로필의 현재 하단 3키를 실제로 읽어 표시한다. 연결 실패 시 로컬 Q/W/E를 실제값처럼 대체 표시하지 않고 읽기 재시도 화면을 보여준다. 임의 매크로, 셸 명령, URL, 펌웨어/플래시 저장은 범위에서 제외한다.
 
@@ -296,7 +299,7 @@ IPC 입력은 renderer를 신뢰하지 않는다. `BrowserWindow.fromWebContents
 | 창/IPC/실행 | `src/main/index.ts`, `src/preload/index.ts`, `src/renderer/src/env.d.ts` |
 | 음악 동작 | 신규 `src/main/music/playback-controls.ts` |
 | 단축키 라우터 | 신규 `src/main/input/key-action-router.ts` |
-| 장치 프로토콜 | 이번 변경 없음. 안전 게이트 승인 뒤 `protocol.ts`, `device-host.ts`, `device-worker.ts` 검토 |
+| 장치 프로토콜 | P1~P5 `0x02` RAM 선택·readback은 `protocol.ts`, `device-host.ts`, `device-worker.ts`에 구현. 일반 키 `0x10` 쓰기는 안전 게이트 승인 뒤 검토 |
 | renderer | `App.tsx`, `app-header.tsx`, 신규 keyboard/profile/backup 컴포넌트, `styles.css` |
 | 테스트 | config/backup/action/protocol 인접 `*.test.ts` 또는 `*.test.tsx` |
 | 문서 | `DESIGN.md`, `docs/PROTOCOL.md`, `docs/XPAD_MINI_DIRECT_API.md`, `docs/DEVELOPMENT_REPORT.md` |
@@ -308,6 +311,8 @@ IPC 입력은 renderer를 신뢰하지 않는다. `BrowserWindow.fromWebContents
 - P1은 이전 곡·재생/일시정지·다음 곡으로 표시되고 편집할 수 없다.
 - P2~P5 각각 세 키의 편집 내용이 프로파일 전환 후에도 유지된다.
 - P2~P5에 서로 다른 값을 저장한 뒤 각 탭을 순서대로 누르면 해당 프로파일 값만 표시되고 F16~F18 사용 프로파일은 바뀌지 않는다.
+- 재생 화면의 P1~P5 버튼은 실제 장치 프로필을 전환하고 readback 성공 후 선택 표시·세 키
+  요약·F16~F18 라우터의 활성 프로필을 함께 갱신한다.
 - USB 연결 실패 또는 LCD 프로토콜 미준비 시 키보드와 일반 설정의 변경·저장·백업·복원·테스트 컨트롤이 비활성화되며 main IPC도 변경 요청을 거부한다.
 - 사용자는 이름 1~40자와 설명 0~500자를 입력해 최대 10개 백업을 저장할 수 있다.
 - 10개 상태에서 11번째 생성은 파일을 변경하지 않고 거부되며 삭제 또는 덮어쓰기 경로가 제공된다.
