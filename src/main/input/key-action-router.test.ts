@@ -35,7 +35,9 @@ describe('KeyActionRouter', () => {
     };
     const router = new KeyActionRouter(execute, { register, unregister });
 
-    expect(router.configure(settings).shortcutState).toBe('active');
+    const status = router.configure(settings);
+    expect(status.shortcutState).toBe('active');
+    expect(status.deviceApplySupported).toBe(true);
     expect(register.mock.calls.map(([accelerator]) => accelerator)).toEqual([
       'F16',
       'F17',

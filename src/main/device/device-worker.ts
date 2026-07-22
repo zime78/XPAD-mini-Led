@@ -1,6 +1,8 @@
 import { parentPort, workerData } from 'node:worker_threads';
 import type {
   KeyboardDeviceSnapshot,
+  KeyboardKeymapBackup,
+  KeyboardSettings,
   KnobFineVolumeState,
   KnobKeymapBackup,
   ProfileId,
@@ -16,6 +18,12 @@ export type WorkerInMessage =
       backup?: KnobKeymapBackup;
     }
   | { type: 'readKeyboardProfiles'; requestId: number }
+  | {
+      type: 'configureKeyboardMappings';
+      requestId: number;
+      settings: KeyboardSettings;
+      backup?: KeyboardKeymapBackup;
+    }
   | { type: 'selectKeyboardProfile'; requestId: number; profileId: ProfileId }
   | { type: 'shutdown' };
 
@@ -29,6 +37,7 @@ export type WorkerOutMessage =
       knobKeymapBackup?: KnobKeymapBackup;
       activeProfileId?: ProfileId;
       keyboardSnapshot?: KeyboardDeviceSnapshot;
+      keyboardKeymapBackup?: KeyboardKeymapBackup;
     }
   | {
       type: 'keyboardProfiles';
@@ -41,6 +50,13 @@ export type WorkerOutMessage =
       requestId: number;
       profileId?: ProfileId;
       error?: string;
+    }
+  | {
+      type: 'keyboardMappingsConfigured';
+      requestId: number;
+      snapshot?: KeyboardDeviceSnapshot;
+      backup?: KeyboardKeymapBackup;
+      error?: string;
     };
 
 const port = parentPort;
@@ -51,6 +67,9 @@ const protocol = new XpadProtocol(device);
 const initialKnobConfig = workerData as {
   enabled: boolean;
   backup?: KnobKeymapBackup;
+  keyboardSettings: KeyboardSettings;
+  keyboardBackup?: KeyboardKeymapBackup;
+  keyboardMappingsEnabled: boolean;
 };
 let currentFrame: Buffer | null = null;
 let timer: NodeJS.Timeout | null = null;
@@ -63,6 +82,10 @@ let knobFineVolumeError: string | null = null;
 let knobConfigVersion = 0;
 let knobQueue = Promise.resolve();
 let keyboardSnapshot: KeyboardDeviceSnapshot | null = null;
+let keyboardSettings = structuredClone(initialKnobConfig.keyboardSettings);
+let keyboardBackup = initialKnobConfig.keyboardBackup;
+let keyboardMappingsEnabled = initialKnobConfig.keyboardMappingsEnabled;
+let keyboardMappingsApplied = false;
 
 function reportStatus(): void {
   port!.postMessage({
@@ -74,6 +97,7 @@ function reportStatus(): void {
     ...(knobBackup ? { knobKeymapBackup: knobBackup } : {}),
     ...(protocol.activeProfileId ? { activeProfileId: protocol.activeProfileId } : {}),
     ...(keyboardSnapshot ? { keyboardSnapshot } : {}),
+    ...(keyboardBackup ? { keyboardKeymapBackup: keyboardBackup } : {}),
   } satisfies WorkerOutMessage);
 }
 
@@ -94,12 +118,13 @@ device.on('disconnect', () => {
   knobFineVolumeState = knobEnabled ? 'pending' : 'disabled';
   knobFineVolumeError = null;
   keyboardSnapshot = null;
+  keyboardMappingsApplied = false;
   reportStatus();
 });
 protocol.onReady = () => {
   reportStatus();
   queueKnobConfiguration();
-  queueKeyboardProfileSync();
+  queueKeyboardMappingSync();
 };
 
 function pauseStreaming(): void {
@@ -171,17 +196,67 @@ function queueKeyboardProfileRead(requestId: number): void {
     });
 }
 
-function queueKeyboardProfileSync(): void {
+function queueKeyboardMappingSync(): void {
   knobQueue = knobQueue
     .catch(() => {})
     .then(async () => {
       pauseStreaming();
       try {
         if (!protocol.ready) return;
-        keyboardSnapshot = await protocol.readKeyboardProfiles();
+        if (keyboardMappingsEnabled) {
+          const result = await protocol.configureKeyboardAppMappings(
+            keyboardSettings,
+            keyboardBackup
+          );
+          keyboardBackup = result.backup;
+          keyboardSnapshot = result.snapshot;
+          keyboardMappingsApplied = result.state === 'active';
+        } else if (keyboardBackup) {
+          const result = await protocol.restoreKeyboardAppMappings(keyboardBackup);
+          keyboardSnapshot = result.snapshot;
+          keyboardMappingsApplied = false;
+        } else {
+          keyboardSnapshot = await protocol.readKeyboardProfiles();
+          keyboardMappingsApplied = false;
+        }
         reportStatus();
       } catch (error) {
-        console.error('[worker] keyboard profile sync failed', error);
+        console.error('[worker] keyboard mapping sync failed', error);
+      } finally {
+        resumeStreaming();
+      }
+    });
+}
+
+function queueKeyboardMappingConfiguration(
+  requestId: number,
+  settings: KeyboardSettings,
+  backup?: KeyboardKeymapBackup
+): void {
+  knobQueue = knobQueue
+    .catch(() => {})
+    .then(async () => {
+      pauseStreaming();
+      try {
+        const result = await protocol.configureKeyboardAppMappings(settings, backup);
+        keyboardSettings = structuredClone(settings);
+        keyboardMappingsEnabled = true;
+        keyboardMappingsApplied = result.state === 'active';
+        keyboardBackup = result.backup;
+        keyboardSnapshot = result.snapshot;
+        port!.postMessage({
+          type: 'keyboardMappingsConfigured',
+          requestId,
+          snapshot: result.snapshot,
+          backup: result.backup,
+        } satisfies WorkerOutMessage);
+        reportStatus();
+      } catch (error) {
+        port!.postMessage({
+          type: 'keyboardMappingsConfigured',
+          requestId,
+          error: error instanceof Error ? error.message : String(error),
+        } satisfies WorkerOutMessage);
       } finally {
         resumeStreaming();
       }
@@ -229,6 +304,12 @@ port.on('message', (message: WorkerInMessage) => {
     queueKnobConfiguration();
   } else if (message.type === 'readKeyboardProfiles') {
     queueKeyboardProfileRead(message.requestId);
+  } else if (message.type === 'configureKeyboardMappings') {
+    queueKeyboardMappingConfiguration(
+      message.requestId,
+      message.settings,
+      message.backup
+    );
   } else if (message.type === 'selectKeyboardProfile') {
     queueKeyboardProfileSelection(message.requestId, message.profileId);
   } else if (message.type === 'shutdown') {
@@ -241,6 +322,9 @@ async function shutdown(): Promise<void> {
   knobConfigVersion++;
   try {
     await knobQueue;
+    if (protocol.ready && keyboardBackup && keyboardMappingsApplied) {
+      await protocol.restoreKeyboardAppMappings(keyboardBackup);
+    }
     if (protocol.ready && knobBackup) {
       await protocol.configureKnobFineVolume(false, knobBackup);
     }

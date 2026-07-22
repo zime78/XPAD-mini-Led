@@ -3,6 +3,8 @@ import path from 'node:path';
 import { Worker } from 'node:worker_threads';
 import type {
   KeyboardDeviceSnapshot,
+  KeyboardKeymapBackup,
+  KeyboardSettings,
   KnobFineVolumeState,
   KnobKeymapBackup,
   ProfileId,
@@ -28,6 +30,17 @@ export class DeviceHost extends EventEmitter {
       timer: NodeJS.Timeout;
     }
   >();
+  private keyboardMappingRequests = new Map<
+    number,
+    {
+      resolve: (result: {
+        snapshot: KeyboardDeviceSnapshot;
+        backup: KeyboardKeymapBackup;
+      }) => void;
+      reject: (error: Error) => void;
+      timer: NodeJS.Timeout;
+    }
+  >();
   connected = false;
   protocolReady = false;
   knobFineVolumeState: KnobFineVolumeState = 'disabled';
@@ -35,10 +48,23 @@ export class DeviceHost extends EventEmitter {
   knobKeymapBackup: KnobKeymapBackup | undefined;
   activeProfileId: ProfileId | null = null;
   keyboardSnapshot: KeyboardDeviceSnapshot | null = null;
+  keyboardKeymapBackup: KeyboardKeymapBackup | undefined;
 
-  start(enabled: boolean, backup?: KnobKeymapBackup): void {
+  start(
+    enabled: boolean,
+    backup: KnobKeymapBackup | undefined,
+    keyboardSettings: KeyboardSettings,
+    keyboardBackup: KeyboardKeymapBackup | undefined,
+    keyboardMappingsEnabled: boolean
+  ): void {
     this.worker = new Worker(path.join(__dirname, 'device-worker.js'), {
-      workerData: { enabled, backup },
+      workerData: {
+        enabled,
+        backup,
+        keyboardSettings,
+        keyboardBackup,
+        keyboardMappingsEnabled,
+      },
     });
     this.worker.on('message', (message: WorkerOutMessage) => {
       if (message.type === 'keyboardProfiles') {
@@ -71,13 +97,30 @@ export class DeviceHost extends EventEmitter {
         }
         return;
       }
+      if (message.type === 'keyboardMappingsConfigured') {
+        const request = this.keyboardMappingRequests.get(message.requestId);
+        if (!request) return;
+        this.keyboardMappingRequests.delete(message.requestId);
+        clearTimeout(request.timer);
+        if (message.snapshot && message.backup) {
+          this.keyboardSnapshot = structuredClone(message.snapshot);
+          this.activeProfileId = message.snapshot.activeProfileId;
+          this.keyboardKeymapBackup = structuredClone(message.backup);
+          request.resolve({ snapshot: message.snapshot, backup: message.backup });
+        } else {
+          request.reject(new Error(message.error ?? '키보드 매핑을 적용하지 못했습니다.'));
+        }
+        return;
+      }
       const previousBackup = JSON.stringify(this.knobKeymapBackup);
+      const previousKeyboardBackup = JSON.stringify(this.keyboardKeymapBackup);
       this.connected = message.connected;
       this.protocolReady = message.protocolReady;
       this.knobFineVolumeState = message.knobFineVolumeState;
       this.knobFineVolumeError = message.knobFineVolumeError;
       this.knobKeymapBackup = message.knobKeymapBackup;
       this.activeProfileId = message.activeProfileId ?? null;
+      this.keyboardKeymapBackup = message.keyboardKeymapBackup;
       if (message.keyboardSnapshot) {
         this.keyboardSnapshot = structuredClone(message.keyboardSnapshot);
       }
@@ -86,6 +129,12 @@ export class DeviceHost extends EventEmitter {
         JSON.stringify(this.knobKeymapBackup) !== previousBackup
       ) {
         this.emit('knob-backup', this.knobKeymapBackup);
+      }
+      if (
+        this.keyboardKeymapBackup &&
+        JSON.stringify(this.keyboardKeymapBackup) !== previousKeyboardBackup
+      ) {
+        this.emit('keyboard-backup', this.keyboardKeymapBackup);
       }
       this.emit('status');
     });
@@ -99,6 +148,7 @@ export class DeviceHost extends EventEmitter {
       this.keyboardSnapshot = null;
       this.rejectKeyboardRequests('XPAD 장치 워커가 종료되었습니다.');
       this.rejectProfileRequests('XPAD 장치 워커가 종료되었습니다.');
+      this.rejectKeyboardMappingRequests('XPAD 장치 워커가 종료되었습니다.');
       this.emit('status');
     });
   }
@@ -160,11 +210,41 @@ export class DeviceHost extends EventEmitter {
     });
   }
 
+  configureKeyboardMappings(
+    settings: KeyboardSettings,
+    backup?: KeyboardKeymapBackup
+  ): Promise<{ snapshot: KeyboardDeviceSnapshot; backup: KeyboardKeymapBackup }> {
+    if (!this.worker || !this.connected || !this.protocolReady) {
+      return Promise.reject(new Error('XPAD Mini 연결과 프로토콜 준비가 필요합니다.'));
+    }
+    const requestId = ++this.requestSequence;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.keyboardMappingRequests.delete(requestId);
+        reject(new Error('키보드 매핑 적용이 30초 안에 끝나지 않았습니다.'));
+      }, 30_000);
+      this.keyboardMappingRequests.set(requestId, { resolve, reject, timer });
+      try {
+        this.worker?.postMessage({
+          type: 'configureKeyboardMappings',
+          requestId,
+          settings,
+          backup,
+        } satisfies WorkerInMessage);
+      } catch (error) {
+        this.keyboardMappingRequests.delete(requestId);
+        clearTimeout(timer);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      }
+    });
+  }
+
   shutdown(): Promise<void> {
     const worker = this.worker;
     this.worker = null;
     this.rejectKeyboardRequests('앱이 종료되어 키보드 프로필 읽기를 중단했습니다.');
     this.rejectProfileRequests('앱이 종료되어 키보드 프로필 전환을 중단했습니다.');
+    this.rejectKeyboardMappingRequests('앱이 종료되어 키보드 매핑 적용을 중단했습니다.');
     if (!worker) return Promise.resolve();
     return new Promise((resolve) => {
       worker.once('exit', () => resolve());
@@ -198,5 +278,13 @@ export class DeviceHost extends EventEmitter {
       request.reject(new Error(message));
     }
     this.profileRequests.clear();
+  }
+
+  private rejectKeyboardMappingRequests(message: string): void {
+    for (const request of this.keyboardMappingRequests.values()) {
+      clearTimeout(request.timer);
+      request.reject(new Error(message));
+    }
+    this.keyboardMappingRequests.clear();
   }
 }

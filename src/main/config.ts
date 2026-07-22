@@ -1,7 +1,14 @@
 import { app } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
-import { AppConfig, DEFAULT_CONFIG, KnobKeymapBackup } from '../shared/types';
+import {
+  AppConfig,
+  DEFAULT_CONFIG,
+  EDITABLE_PROFILE_IDS,
+  KeyboardKeymapBackup,
+  KEYBOARD_SLOTS,
+  KnobKeymapBackup,
+} from '../shared/types';
 import { normalizeKeyboardSettings } from './keyboard-settings';
 
 const KEY_INFO_BASE64_LENGTH = 76;
@@ -38,6 +45,7 @@ function normalize(config: AppConfig): AppConfig {
     ? config.servicePreference
     : DEFAULT_CONFIG.servicePreference;
   const knobKeymapBackup = normalizeKnobKeymapBackup(config.knobKeymapBackup);
+  const keyboardKeymapBackup = normalizeKeyboardKeymapBackup(config.keyboardKeymapBackup);
   return {
     servicePreference: preference,
     pollIntervalMs: Math.min(10_000, Math.max(750, Number(config.pollIntervalMs) || 1500)),
@@ -49,9 +57,28 @@ function normalize(config: AppConfig): AppConfig {
       Math.max(1, Math.round(Number(config.fineVolumeStepsPerDetent) || 1))
     ),
     ...(knobKeymapBackup ? { knobKeymapBackup } : {}),
+    ...(keyboardKeymapBackup ? { keyboardKeymapBackup } : {}),
     keyboardSettings: normalizeKeyboardSettings(config.keyboardSettings),
     launchAtLogin: Boolean(config.launchAtLogin),
   };
+}
+
+function normalizeKeyboardKeymapBackup(
+  backup: KeyboardKeymapBackup | undefined
+): KeyboardKeymapBackup | undefined {
+  if (!backup || typeof backup !== 'object' || !backup.profiles) return undefined;
+  const profiles = {} as KeyboardKeymapBackup['profiles'];
+  for (const profileId of EDITABLE_PROFILE_IDS) {
+    const source = backup.profiles[profileId];
+    if (!source) return undefined;
+    const entries = {} as Record<(typeof KEYBOARD_SLOTS)[number], string>;
+    for (const slot of KEYBOARD_SLOTS) {
+      if (!isKeyInfoBase64(source[slot])) return undefined;
+      entries[slot] = source[slot];
+    }
+    profiles[profileId] = entries;
+  }
+  return { profiles };
 }
 
 function normalizeKnobKeymapBackup(

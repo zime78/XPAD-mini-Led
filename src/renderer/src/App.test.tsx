@@ -25,8 +25,8 @@ const config: AppConfig = {
 const keyboardRuntime: KeyboardRuntimeStatus = {
   shortcutState: 'disabled',
   shortcutError: null,
-  deviceApplySupported: false,
-  deviceApplyReason: '프로파일 장치 주소 지정 프로토콜 확인 필요',
+  deviceApplySupported: true,
+  deviceApplyReason: 'P2~P5 앱 실행 키를 RAM에 적용합니다.',
 };
 
 const keyboardSettings = createDefaultKeyboardSettings();
@@ -368,7 +368,7 @@ describe('XPAD Mini Now Playing 화면', () => {
     expect(screen.queryByRole('button', { name: '음악 제어' })).toBeNull();
     expect(screen.getByRole('option', { name: '재생/일시정지' })).toBeTruthy();
     expect(screen.getByRole('option', { name: 'Q' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '장치에 적용' }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByText('P2~P5 앱 실행 키를 RAM에 적용합니다.')).toBeTruthy();
     expect(document.title).toBe('XPAD Mini 키보드 설정');
   });
 
@@ -409,7 +409,7 @@ describe('XPAD Mini Now Playing 화면', () => {
           name: 'F16~F18 사용 프로파일',
         }) as HTMLSelectElement).value
       ).toBe('1');
-      expect(screen.getByRole('button', { name: '로컬 설정 저장' }).hasAttribute('disabled'))
+      expect(screen.getByRole('button', { name: '저장하고 장치에 적용' }).hasAttribute('disabled'))
         .toBe(true);
     }
   });
@@ -455,16 +455,21 @@ describe('XPAD Mini Now Playing 화면', () => {
         name: /왼쪽 버튼, 현재 동작 재생\/일시정지/,
       })
     ).toBeTruthy();
-    expect(screen.getByRole('button', { name: '로컬 설정 저장' }).hasAttribute('disabled'))
+    expect(screen.getByRole('button', { name: '저장하고 장치에 적용' }).hasAttribute('disabled'))
       .toBe(true);
     fireEvent.click(screen.getByRole('button', { name: /오른쪽 버튼/ }));
     fireEvent.click(screen.getByRole('button', { name: '앱 실행' }));
     await screen.findByText('Finder');
+    expect(
+      screen.getByRole('checkbox', { name: /F16~F18 컴퓨터 단축키 활성화/ })
+        .hasAttribute('disabled')
+    ).toBe(true);
     expect(screen.getByRole('tab', { name: /P3 · Profile 3.*변경됨/ })).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: '로컬 설정 저장' }));
+    fireEvent.click(screen.getByRole('button', { name: '저장하고 장치에 적용' }));
 
     await waitFor(() => expect(window.xpad.saveKeyboardSettings).toHaveBeenCalledOnce());
     const savedKeyboardSettings = vi.mocked(window.xpad.saveKeyboardSettings).mock.calls[0][0];
+    expect(savedKeyboardSettings.enabled).toBe(true);
     expect(savedKeyboardSettings.activeProfileId).toBe(1);
     expect(savedKeyboardSettings.profiles[3].assignments.right).toEqual({
       type: 'launch-app',

@@ -13,12 +13,6 @@ import {
   ProfileId,
 } from '../shared/types';
 
-const APP_SHORTCUT_KEYS = {
-  left: 'F16',
-  center: 'F17',
-  right: 'F18',
-} as const;
-
 export function mergeKeyboardDeviceSnapshot(
   localSettings: KeyboardSettings,
   snapshot: KeyboardDeviceSnapshot
@@ -30,12 +24,9 @@ export function mergeKeyboardDeviceSnapshot(
   for (const profileId of EDITABLE_PROFILE_IDS) {
     for (const slot of KEYBOARD_SLOTS) {
       const localAction = local.profiles[profileId].assignments[slot];
-      const deviceAction = profiles[profileId].assignments[slot];
-      if (
-        localAction.type === 'launch-app' &&
-        deviceAction.type === 'key' &&
-        deviceAction.keyCode === APP_SHORTCUT_KEYS[slot]
-      ) {
+      // 앱 실행은 장치의 F16~F18 값을 해석한 결과가 아니라 앱의 논리 설정이다.
+      // 장치 재조회가 해당 값을 미지원으로 보고해도 저장된 앱 연결을 유지한다.
+      if (localAction.type === 'launch-app') {
         profiles[profileId].assignments[slot] = localAction;
       }
     }
@@ -77,7 +68,13 @@ export function normalizeKeyboardSettings(value: unknown): KeyboardSettings {
   }
 
   return {
-    enabled: typeof value.enabled === 'boolean' ? value.enabled : defaults.enabled,
+    enabled:
+      (typeof value.enabled === 'boolean' ? value.enabled : defaults.enabled) ||
+      EDITABLE_PROFILE_IDS.some((profileId) =>
+        KEYBOARD_SLOTS.some(
+          (slot) => profiles[profileId].assignments[slot].type === 'launch-app'
+        )
+      ),
     activeProfileId,
     profiles,
   };

@@ -11,6 +11,7 @@ export type PlayerViewMode = 'expanded' | 'mini';
 export const PROFILE_IDS = [1, 2, 3, 4, 5] as const;
 export type ProfileId = (typeof PROFILE_IDS)[number];
 export const EDITABLE_PROFILE_IDS = [2, 3, 4, 5] as const satisfies readonly ProfileId[];
+export type EditableProfileId = (typeof EDITABLE_PROFILE_IDS)[number];
 
 export const KEYBOARD_SLOTS = ['left', 'center', 'right'] as const;
 export type KeyboardSlot = (typeof KEYBOARD_SLOTS)[number];
@@ -134,6 +135,10 @@ export interface KeyboardDeviceSnapshot {
   profiles: Record<ProfileId, KeyboardProfileSettings>;
 }
 
+export interface KeyboardKeymapBackup {
+  profiles: Record<EditableProfileId, Record<KeyboardSlot, string>>;
+}
+
 export interface KeyboardProfileState extends KeyboardDeviceSnapshot {
   switching: boolean;
   error: string | null;
@@ -173,7 +178,7 @@ export type KeyboardShortcutState = 'disabled' | 'active' | 'error';
 export interface KeyboardRuntimeStatus {
   shortcutState: KeyboardShortcutState;
   shortcutError: string | null;
-  deviceApplySupported: false;
+  deviceApplySupported: true;
   deviceApplyReason: string;
 }
 
@@ -212,6 +217,7 @@ export interface AppConfig {
   fineVolumeEnabled: boolean;
   fineVolumeStepsPerDetent: number;
   knobKeymapBackup?: KnobKeymapBackup;
+  keyboardKeymapBackup?: KeyboardKeymapBackup;
   keyboardSettings: KeyboardSettings;
   launchAtLogin: boolean;
 }

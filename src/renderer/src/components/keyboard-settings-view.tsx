@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   createFixedProfileOne,
+  EDITABLE_PROFILE_IDS,
   KEYBOARD_SLOTS,
   KeyboardAction,
   KeyboardBackupList,
@@ -198,6 +199,13 @@ export function KeyboardSettingsView({ status, onClose }: KeyboardSettingsViewPr
     () => Boolean(settings && saved && JSON.stringify(settings) !== JSON.stringify(saved)),
     [settings, saved]
   );
+  const hasAppMappings = settings
+    ? EDITABLE_PROFILE_IDS.some((profileId) =>
+        KEYBOARD_SLOTS.some(
+          (slot) => settings.profiles[profileId].assignments[slot].type === 'launch-app'
+        )
+      )
+    : false;
   const settingsDisabled = !status.deviceConnected || !status.protocolReady;
   const profileIsFixed = selectedProfileId === 1;
 
@@ -262,10 +270,13 @@ export function KeyboardSettingsView({ status, onClose }: KeyboardSettingsViewPr
         ...current,
         [application.appPath]: application.iconDataUrl,
       }));
-      setSelectedAction({
-        type: 'launch-app',
-        appName: application.appName,
-        appPath: application.appPath,
+      patchSettings((draft) => {
+        draft.profiles[selectedProfileId].assignments[selectedSlot] = {
+          type: 'launch-app',
+          appName: application.appName,
+          appPath: application.appPath,
+        };
+        draft.enabled = true;
       });
     } catch (reason) {
       setError(errorMessage(reason));
@@ -300,7 +311,7 @@ export function KeyboardSettingsView({ status, onClose }: KeyboardSettingsViewPr
       setSettings(result.settings);
       setSaved(result.settings);
       setRuntime(result.runtimeStatus);
-      setMessage('키보드 설정과 F16~F18 단축키 상태를 저장했습니다.');
+      setMessage('설정을 저장하고 P2~P5 앱 실행 키를 장치 RAM에 적용했습니다.');
       setError('');
     } catch (reason) {
       setError(errorMessage(reason));
@@ -628,6 +639,7 @@ export function KeyboardSettingsView({ status, onClose }: KeyboardSettingsViewPr
                 <input
                   type="checkbox"
                   checked={settings.enabled}
+                  disabled={hasAppMappings}
                   onChange={(event) =>
                     patchSettings((draft) => {
                       draft.enabled = event.target.checked;
@@ -636,7 +648,11 @@ export function KeyboardSettingsView({ status, onClose }: KeyboardSettingsViewPr
                 />
                 <span>
                   F16~F18 컴퓨터 단축키 활성화
-                  <small>기존 볼륨 단축키 F19/F20은 변경하지 않습니다.</small>
+                  <small>
+                    {hasAppMappings
+                      ? '앱 실행 설정이 있어 자동으로 활성화됩니다.'
+                      : '기존 볼륨 단축키 F19/F20은 변경하지 않습니다.'}
+                  </small>
                 </span>
               </label>
 
@@ -652,16 +668,9 @@ export function KeyboardSettingsView({ status, onClose }: KeyboardSettingsViewPr
                   되돌리기
                 </button>
                 <button className="primary" disabled={!dirty || busy} onClick={() => void save()}>
-                  로컬 설정 저장
+                  저장하고 장치에 적용
                 </button>
               </div>
-              <button
-                className="device-apply"
-                disabled
-                title={runtime.deviceApplyReason}
-              >
-                장치에 적용
-              </button>
               <p className="protocol-blocked">{runtime.deviceApplyReason}</p>
             </aside>
           </div>

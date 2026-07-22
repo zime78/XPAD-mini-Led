@@ -17,6 +17,7 @@ import {
   KeyboardAction,
   KeyboardActionResult,
   KeyboardBackupInput,
+  KeyboardKeymapBackup,
   KeyboardRuntimeStatus,
   KeyboardSettings,
   KeyboardSettingsSaveResult,
@@ -83,6 +84,10 @@ const PLAYER_WINDOW_SIZES: Record<PlayerViewMode, { width: number; height: numbe
   expanded: { width: 680, height: 320 },
   mini: { width: 300, height: 248 },
 };
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 function resourcePath(...parts: string[]): string {
   const root = app.isPackaged ? process.resourcesPath : path.join(__dirname, '../..');
@@ -331,9 +336,12 @@ function configureLoginItem(): void {
 
 function applyConfig(next: AppConfig): AppConfig {
   const knobKeymapBackup = next.knobKeymapBackup ?? config.knobKeymapBackup;
+  const keyboardKeymapBackup =
+    next.keyboardKeymapBackup ?? config.keyboardKeymapBackup;
   config = saveConfig({
     ...next,
     knobKeymapBackup,
+    keyboardKeymapBackup,
     keyboardSettings: config.keyboardSettings,
   });
   monitor.configure(config.servicePreference, config.pollIntervalMs);
@@ -360,11 +368,48 @@ function storeKnobKeymapBackup(backup: KnobKeymapBackup): void {
   config = saveConfig({ ...config, knobKeymapBackup: backup });
 }
 
-function saveKeyboardSettings(next: KeyboardSettings): KeyboardSettingsSaveResult {
+function storeKeyboardKeymapBackup(backup: KeyboardKeymapBackup): void {
+  if (JSON.stringify(config.keyboardKeymapBackup) === JSON.stringify(backup)) return;
+  config = saveConfig({ ...config, keyboardKeymapBackup: backup });
+}
+
+async function saveKeyboardSettings(
+  next: KeyboardSettings
+): Promise<KeyboardSettingsSaveResult> {
   requireDeviceSettingsReady();
   const settings = normalizeKeyboardSettings(next);
-  config = saveConfig({ ...config, keyboardSettings: settings });
+  const previousSettings = structuredClone(config.keyboardSettings);
   const runtimeStatus = keyActionRouter.configure(settings);
+  if (settings.enabled && runtimeStatus.shortcutState !== 'active') {
+    keyActionRouter.configure(previousSettings);
+    throw new Error(
+      runtimeStatus.shortcutError ?? 'F16~F18 앱 실행 단축키를 활성화하지 못했습니다.'
+    );
+  }
+  let result: Awaited<ReturnType<DeviceHost['configureKeyboardMappings']>>;
+  try {
+    result = await deviceHost.configureKeyboardMappings(settings, config.keyboardKeymapBackup);
+  } catch (error) {
+    keyActionRouter.configure(previousSettings);
+    throw error;
+  }
+  try {
+    config = saveConfig({
+      ...config,
+      keyboardSettings: settings,
+      keyboardKeymapBackup: result.backup,
+    });
+  } catch (error) {
+    keyActionRouter.configure(previousSettings);
+    try {
+      await deviceHost.configureKeyboardMappings(previousSettings, result.backup);
+    } catch (rollbackError) {
+      throw new Error(
+        `설정 파일 저장 실패: ${errorMessage(error)} / 장치 원복 실패: ${errorMessage(rollbackError)}`
+      );
+    }
+    throw new Error(`설정 파일 저장 실패: ${errorMessage(error)}`);
+  }
   return { settings: structuredClone(settings), runtimeStatus };
 }
 
@@ -547,9 +592,9 @@ function registerIpc(): void {
     requirePlayerWindow(event);
     return runPlayerAction(slot);
   });
-  ipcMain.handle('save-keyboard-settings', (event, next: KeyboardSettings) => {
+  ipcMain.handle('save-keyboard-settings', async (event, next: KeyboardSettings) => {
     requireKeyboardWindow(event);
-    return saveKeyboardSettings(next);
+    return await saveKeyboardSettings(next);
   });
   ipcMain.handle('get-keyboard-runtime-status', (event): KeyboardRuntimeStatus => {
     requireKeyboardWindow(event);
@@ -646,6 +691,7 @@ if (!gotLock) {
       broadcastStatus();
     });
     deviceHost.on('knob-backup', storeKnobKeymapBackup);
+    deviceHost.on('keyboard-backup', storeKeyboardKeymapBackup);
     fineVolumeController.on('status', broadcastStatus);
     fineVolumeController.on('volume-adjusted', showVolumeFeedback);
     keyActionRouter.on('status', broadcastKeyboardStatus);
@@ -656,7 +702,7 @@ if (!gotLock) {
     monitor.on('status', broadcastStatus);
 
     registerIpc();
-    keyActionRouter.configure(config.keyboardSettings);
+    const keyboardRuntime = keyActionRouter.configure(config.keyboardSettings);
     const shortcutsReady =
       !hidDisabled &&
       fineVolumeController.configure(
@@ -666,7 +712,10 @@ if (!gotLock) {
     if (!hidDisabled) {
       deviceHost.start(
         config.fineVolumeEnabled && shortcutsReady,
-        config.knobKeymapBackup
+        config.knobKeymapBackup,
+        config.keyboardSettings,
+        config.keyboardKeymapBackup,
+        keyboardRuntime.shortcutState === 'active'
       );
     }
     tray = new Tray(trayIcon());

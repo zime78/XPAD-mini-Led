@@ -58,6 +58,9 @@ const MEDIA_ACTIONS = new Map<number, KeyboardKeyCode>([
   [12, 'MediaPlayPause'],
   [15, 'MediaTrackNext'],
 ]);
+const MEDIA_ACTION_BY_CODE = new Map<KeyboardKeyCode, number>(
+  Array.from(MEDIA_ACTIONS, ([action, keyCode]) => [keyCode, action])
+);
 
 export const SLOT_KEY_INFO_INDEX: Record<KeyboardSlot, number> = {
   left: 0,
@@ -106,6 +109,24 @@ export function decodeKeyboardAction(entry: Buffer): KeyboardAction {
 
 export function keyboardUsageForCode(keyCode: KeyboardKeyCode): number | null {
   return KEYBOARD_USAGE_BY_CODE.get(keyCode) ?? null;
+}
+
+export function encodeKeyboardAction(entry: Buffer, action: KeyboardAction): Buffer | null {
+  if (entry.length !== KEY_INFO_SIZE || action.type !== 'key') return null;
+  const mapped = Buffer.from(entry);
+  const mediaAction = MEDIA_ACTION_BY_CODE.get(action.keyCode);
+  if (mediaAction !== undefined) {
+    mapped.writeUInt32LE(KEY_OUTPUT_EXTENDED, KEY_OUTPUT_TYPE_OFFSET);
+    mapped.fill(0, KEY_ACTION_OFFSET, KEY_ACTION_OFFSET + 4);
+    mapped[KEY_ACTION_OFFSET] = mediaAction;
+    return mapped;
+  }
+  const usage = keyboardUsageForCode(action.keyCode);
+  if (usage === null) return null;
+  mapped.writeUInt32LE(KEY_OUTPUT_KEYBOARD, KEY_OUTPUT_TYPE_OFFSET);
+  mapped.fill(0, KEY_ACTION_OFFSET, KEY_ACTION_OFFSET + 4);
+  mapped[KEY_ACTION_OFFSET + 1] = usage;
+  return mapped;
 }
 
 function addUsage(code: KeyboardKeyCode, usage: number): void {

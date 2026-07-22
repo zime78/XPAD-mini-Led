@@ -3,20 +3,26 @@ import {
   EDITABLE_PROFILE_IDS,
   KEYBOARD_SLOTS,
   PROFILE_IDS,
+  type EditableProfileId,
   type KeyboardDeviceSnapshot,
+  type KeyboardKeymapBackup,
   type KeyboardProfileSettings,
+  type KeyboardSettings,
+  type KeyboardSlot,
   type KnobKeymapBackup,
   type ProfileId,
 } from '../../shared/types';
 import { XpadDevice } from './hid';
 import {
   decodeKeyboardAction,
+  encodeKeyboardAction,
   KEY_ACTION_OFFSET,
   KEY_INFO_SIZE,
   KEY_OUTPUT_EXTENDED,
   KEY_OUTPUT_KEYBOARD,
   KEY_OUTPUT_TYPE_OFFSET,
   SLOT_KEY_INFO_INDEX,
+  SLOT_SHORTCUT_KEY,
 } from './keyboard-profile-codec';
 
 export const LCD_WIDTH = 240;
@@ -49,12 +55,23 @@ export interface KnobMappingResult {
   backup?: KnobKeymapBackup;
 }
 
+export interface KeyboardMappingResult {
+  state: 'disabled' | 'active';
+  backup: KeyboardKeymapBackup;
+  snapshot: KeyboardDeviceSnapshot;
+}
+
+type KeyboardEntryMatrix = Record<
+  EditableProfileId,
+  Record<KeyboardSlot, Buffer>
+>;
+
 /**
  * Minimal Sayo API v2 client for the XPAD Mini.
  * It verifies ScreenInfo, selects the active RAM profile, writes RGB565 frames,
- * and can temporarily map the two knob directions through KeyInfo. Save (0x0D),
- * flash, LED and bootloader commands remain intentionally absent, so all writes
- * are RAM-only.
+ * and can temporarily map the two knob directions and Profile 2~5 bottom keys
+ * through KeyInfo. Save (0x0D), flash, LED and bootloader commands remain
+ * intentionally absent, so all writes are RAM-only.
  */
 export class XpadProtocol {
   private _ready = false;
@@ -261,6 +278,201 @@ export class XpadProtocol {
     };
   }
 
+  async configureKeyboardAppMappings(
+    settings: KeyboardSettings,
+    storedBackup?: KeyboardKeymapBackup
+  ): Promise<KeyboardMappingResult> {
+    return this.applyKeyboardAppMappings(settings, storedBackup, false);
+  }
+
+  async restoreKeyboardAppMappings(
+    storedBackup: KeyboardKeymapBackup
+  ): Promise<KeyboardMappingResult> {
+    return this.applyKeyboardAppMappings(null, storedBackup, true);
+  }
+
+  private async applyKeyboardAppMappings(
+    settings: KeyboardSettings | null,
+    storedBackup: KeyboardKeymapBackup | undefined,
+    restoring: boolean
+  ): Promise<KeyboardMappingResult> {
+    if (!this._ready) throw new Error('XPAD 프로토콜이 준비되지 않았습니다.');
+    if (restoring && !storedBackup) {
+      throw new Error('P2~P5 하단 버튼 원본 백업이 없어 복원할 수 없습니다.');
+    }
+
+    const originalSystemInfo = await this.readSystemInfoWithRetry();
+    if (!originalSystemInfo) throw new Error('XPAD SystemInfo를 읽지 못했습니다.');
+    const originalProfileIndex = profileIndexFromSystemInfo(originalSystemInfo);
+    let currentSystemInfo = originalSystemInfo;
+    const currentEntries = {} as KeyboardEntryMatrix;
+    const targets = {} as KeyboardEntryMatrix;
+    const backupEntries = {} as KeyboardEntryMatrix;
+    const written: Array<{
+      profileId: EditableProfileId;
+      slot: KeyboardSlot;
+      previous: Buffer;
+    }> = [];
+    let operationError: unknown = null;
+    let rollbackError: unknown = null;
+    let restoreProfileError: unknown = null;
+    const rollbackChanges = async () => {
+      for (const change of [...written].reverse()) {
+        const profileIndex = change.profileId - 1;
+        if (profileIndexFromSystemInfo(currentSystemInfo) !== profileIndex) {
+          currentSystemInfo = await this.switchProfile(currentSystemInfo, profileIndex);
+        }
+        await this.writeKeyInfo(SLOT_KEY_INFO_INDEX[change.slot], change.previous);
+      }
+    };
+
+    try {
+      // 첫 쓰기 전에 P2~P5의 하단 버튼 12개를 모두 확보한다.
+      for (const profileId of EDITABLE_PROFILE_IDS) {
+        const profileIndex = profileId - 1;
+        if (profileIndexFromSystemInfo(currentSystemInfo) !== profileIndex) {
+          currentSystemInfo = await this.switchProfile(currentSystemInfo, profileIndex);
+        }
+        const entries = {} as Record<KeyboardSlot, Buffer>;
+        for (const slot of KEYBOARD_SLOTS) {
+          const entry = await this.readKeyInfoWithRetry(SLOT_KEY_INFO_INDEX[slot]);
+          if (!entry) {
+            throw new Error(`Profile ${profileId} ${slot} 버튼 KeyInfo를 읽지 못했습니다.`);
+          }
+          entries[slot] = entry;
+        }
+        currentEntries[profileId] = entries;
+      }
+
+      for (const profileId of EDITABLE_PROFILE_IDS) {
+        const profileTargets = {} as Record<KeyboardSlot, Buffer>;
+        const profileBackup = {} as Record<KeyboardSlot, Buffer>;
+        for (const slot of KEYBOARD_SLOTS) {
+          const current = currentEntries[profileId][slot];
+          const saved = decodeKeyInfo(storedBackup?.profiles[profileId]?.[slot]);
+          const shortcut = encodeKeyboardAction(current, {
+            type: 'key',
+            keyCode: SLOT_SHORTCUT_KEY[slot],
+          });
+          if (!shortcut) throw new Error(`Profile ${profileId} ${slot} 단축키를 만들지 못했습니다.`);
+          const currentlyMapped = hasSameKeyAction(current, shortcut);
+
+          if (restoring) {
+            if (!saved) {
+              throw new Error(`Profile ${profileId} ${slot} 원본 백업이 손상되었습니다.`);
+            }
+            profileBackup[slot] = saved;
+            profileTargets[slot] = currentlyMapped ? saved : current;
+            continue;
+          }
+
+          profileBackup[slot] = saved && currentlyMapped ? saved : current;
+          const action = settings!.profiles[profileId].assignments[slot];
+          profileTargets[slot] =
+            action.type === 'launch-app'
+              ? shortcut
+              : currentlyMapped && saved
+                ? saved
+                : current;
+        }
+        backupEntries[profileId] = profileBackup;
+        targets[profileId] = profileTargets;
+      }
+
+      for (const profileId of EDITABLE_PROFILE_IDS) {
+        const profileIndex = profileId - 1;
+        if (profileIndexFromSystemInfo(currentSystemInfo) !== profileIndex) {
+          currentSystemInfo = await this.switchProfile(currentSystemInfo, profileIndex);
+        }
+        for (const slot of KEYBOARD_SLOTS) {
+          const previous = currentEntries[profileId][slot];
+          const target = targets[profileId][slot];
+          if (hasSameKeyAction(previous, target)) continue;
+          written.push({ profileId, slot, previous });
+          await this.writeKeyInfo(SLOT_KEY_INFO_INDEX[slot], target);
+        }
+      }
+    } catch (error) {
+      operationError = error;
+      try {
+        await rollbackChanges();
+      } catch (error) {
+        rollbackError = error;
+      }
+    } finally {
+      try {
+        const latestSystemInfo = (await this.readSystemInfoWithRetry()) ?? currentSystemInfo;
+        if (profileIndexFromSystemInfo(latestSystemInfo) !== originalProfileIndex) {
+          await this.switchProfile(latestSystemInfo, originalProfileIndex);
+        }
+      } catch (error) {
+        restoreProfileError = error;
+      }
+    }
+
+    if (!operationError && restoreProfileError) {
+      operationError = restoreProfileError;
+      restoreProfileError = null;
+      try {
+        currentSystemInfo = (await this.readSystemInfoWithRetry()) ?? currentSystemInfo;
+        await rollbackChanges();
+      } catch (error) {
+        rollbackError = error;
+      }
+      try {
+        const latestSystemInfo = (await this.readSystemInfoWithRetry()) ?? currentSystemInfo;
+        if (profileIndexFromSystemInfo(latestSystemInfo) !== originalProfileIndex) {
+          await this.switchProfile(latestSystemInfo, originalProfileIndex);
+        }
+      } catch (error) {
+        restoreProfileError = error;
+      }
+    }
+
+    if (operationError || rollbackError || restoreProfileError) {
+      const reasons = [
+        operationError && `적용 실패: ${errorMessage(operationError)}`,
+        rollbackError && `키 원복 실패: ${errorMessage(rollbackError)}`,
+        restoreProfileError &&
+          `원래 Profile ${originalProfileIndex + 1} 복원 실패: ${errorMessage(restoreProfileError)}`,
+      ].filter(Boolean);
+      throw new Error(reasons.join(' / '));
+    }
+
+    const finalEntries = targets;
+    const profiles = { 1: createFixedProfileOne() } as Record<
+      ProfileId,
+      KeyboardProfileSettings
+    >;
+    for (const profileId of EDITABLE_PROFILE_IDS) {
+      profiles[profileId] = {
+        id: profileId,
+        assignments: {
+          left: decodeKeyboardAction(finalEntries[profileId].left),
+          center: decodeKeyboardAction(finalEntries[profileId].center),
+          right: decodeKeyboardAction(finalEntries[profileId].right),
+        },
+      };
+    }
+    const backup = encodeKeyboardBackup(backupEntries);
+    const hasAppMappings = Boolean(
+      settings &&
+        EDITABLE_PROFILE_IDS.some((profileId) =>
+          KEYBOARD_SLOTS.some(
+            (slot) => settings.profiles[profileId].assignments[slot].type === 'launch-app'
+          )
+        )
+    );
+    return {
+      state: hasAppMappings ? 'active' : 'disabled',
+      backup,
+      snapshot: {
+        activeProfileId: (originalProfileIndex + 1) as ProfileId,
+        profiles,
+      },
+    };
+  }
+
   async selectProfile(profileId: ProfileId): Promise<ProfileId> {
     if (!this._ready) throw new Error('XPAD 프로토콜이 준비되지 않았습니다.');
     if (!PROFILE_IDS.includes(profileId)) {
@@ -411,12 +623,12 @@ export class XpadProtocol {
     const device = this.device.bulk;
     if (!device) throw new Error('XPAD 장치 연결이 끊겼습니다.');
     if (!this.tryWrite(device, this.buildPacket(CMD_KEY_INFO, entry, index), 'KeyInfo 쓰기')) {
-      throw new Error(`노브 KeyInfo ${index} 쓰기에 실패했습니다.`);
+      throw new Error(`KeyInfo ${index} 쓰기에 실패했습니다.`);
     }
     await new Promise<void>((resolve) => setTimeout(resolve, 30));
     const readback = await this.readKeyInfoWithRetry(index);
-    if (!readback || !hasSameKeyAction(readback, entry)) {
-      throw new Error(`노브 KeyInfo ${index} readback 검증에 실패했습니다.`);
+    if (!readback || !readback.equals(entry)) {
+      throw new Error(`KeyInfo ${index} readback 검증에 실패했습니다.`);
     }
   }
 
@@ -526,6 +738,22 @@ function decodeKeyInfo(value: string | undefined): Buffer | null {
   } catch {
     return null;
   }
+}
+
+function encodeKeyboardBackup(entries: KeyboardEntryMatrix): KeyboardKeymapBackup {
+  const profiles = {} as KeyboardKeymapBackup['profiles'];
+  for (const profileId of EDITABLE_PROFILE_IDS) {
+    profiles[profileId] = {
+      left: entries[profileId].left.toString('base64'),
+      center: entries[profileId].center.toString('base64'),
+      right: entries[profileId].right.toString('base64'),
+    };
+  }
+  return { profiles };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function isKeyboardMapping(entry: Buffer, usage: number): boolean {

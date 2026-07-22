@@ -20,7 +20,7 @@ interface ShortcutRegistry {
 }
 
 export const KEYBOARD_DEVICE_APPLY_REASON =
-  'Profile 1은 고정하며 Profile 2~5 실제 설정 읽기만 지원합니다. 일반 키 쓰기·실패 시 전체 원복 검증이 완료될 때까지 장치 적용은 비활성화됩니다.';
+  '앱 실행으로 지정한 Profile 2~5 하단 버튼은 F16~F18로 RAM 매핑합니다. Profile 1과 노브, Save·플래시는 건드리지 않으며 종료 시 원래 키로 복원합니다.';
 
 export class KeyActionRouter extends EventEmitter {
   private settings: KeyboardSettings | null = null;
@@ -69,7 +69,7 @@ export class KeyActionRouter extends EventEmitter {
     return {
       shortcutState: this.shortcutState,
       shortcutError: this.shortcutError,
-      deviceApplySupported: false,
+      deviceApplySupported: true,
       deviceApplyReason: KEYBOARD_DEVICE_APPLY_REASON,
     };
   }

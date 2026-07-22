@@ -32,6 +32,18 @@ describe('normalizeKeyboardSettings', () => {
     expect(normalizeKeyboardSettings(source)).toEqual(source);
   });
 
+  it('P2~P5 앱 실행 설정이 있으면 F16~F18 라우터를 자동 활성화한다', () => {
+    const source = createDefaultKeyboardSettings();
+    source.enabled = false;
+    source.profiles[2].assignments.left = {
+      type: 'launch-app',
+      appName: 'Discord',
+      appPath: '/Applications/Discord.app',
+    };
+
+    expect(normalizeKeyboardSettings(source).enabled).toBe(true);
+  });
+
   it('Profile 1은 음악 제어로 고정하고 Profile 2~5의 서로 다른 키를 보존한다', () => {
     const source = createDefaultKeyboardSettings();
     const keyCodes = ['KeyA', 'KeyB', 'KeyC', 'KeyD', 'KeyE'] as const;
@@ -118,5 +130,31 @@ describe('normalizeKeyboardSettings', () => {
       keyCode: 'MediaTrackPrevious',
     });
     expect(merged.profiles[2].assignments.left).toEqual(local.profiles[2].assignments.left);
+  });
+
+  it('장치 재조회가 미지원 값을 반환해도 저장된 앱 연결은 유지한다', () => {
+    const local = createDefaultKeyboardSettings();
+    local.profiles[2].assignments.left = {
+      type: 'launch-app',
+      appName: 'Discord',
+      appPath: '/Applications/Discord.app',
+    };
+    const profiles = structuredClone(local.profiles);
+    profiles[2].assignments.left = {
+      type: 'unsupported',
+      description: '장치에서 해석할 수 없는 키',
+    };
+    profiles[2].assignments.center = { type: 'key', keyCode: 'KeyZ' };
+
+    const merged = mergeKeyboardDeviceSnapshot(local, {
+      activeProfileId: 2,
+      profiles,
+    });
+
+    expect(merged.profiles[2].assignments.left).toEqual(local.profiles[2].assignments.left);
+    expect(merged.profiles[2].assignments.center).toEqual({
+      type: 'key',
+      keyCode: 'KeyZ',
+    });
   });
 });
