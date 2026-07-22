@@ -1,0 +1,179 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "XPAD Mini Now Playing 동작 구조",
+    "subtitle": "음악 조회부터 240×135 LCD와 설정 UI까지",
+    "output": "runtime-architecture.html",
+    "viewBox": [1160, 600]
+  },
+  "components": [
+    {
+      "id": "music",
+      "type": "external",
+      "label": "Spotify / Music",
+      "sublabel": "macOS 재생 앱",
+      "pos": [40, 100],
+      "size": [150, 64]
+    },
+    {
+      "id": "monitor",
+      "type": "backend",
+      "label": "NowPlayingMonitor",
+      "sublabel": "AppleScript · 1.5초 폴링",
+      "pos": [240, 100],
+      "size": [170, 64]
+    },
+    {
+      "id": "main",
+      "type": "backend",
+      "label": "Electron Main",
+      "sublabel": "상태 · IPC · 최신 렌더 큐",
+      "pos": [470, 100],
+      "size": [170, 64]
+    },
+    {
+      "id": "renderer",
+      "type": "frontend",
+      "label": "Frame Renderer",
+      "sublabel": "SVG → PNG → RGB565-LE",
+      "pos": [700, 100],
+      "size": [170, 64]
+    },
+    {
+      "id": "worker",
+      "type": "messagebus",
+      "label": "Device Worker",
+      "sublabel": "220ms 스트리밍 · diff 청크",
+      "pos": [930, 100],
+      "size": [170, 64]
+    },
+    {
+      "id": "player",
+      "type": "frontend",
+      "label": "재생 · 설정 UI",
+      "sublabel": "미리보기 · P1~P5 · 키 설정",
+      "pos": [470, 300],
+      "size": [170, 64]
+    },
+    {
+      "id": "config",
+      "type": "database",
+      "label": "로컬 설정",
+      "sublabel": "config.json · 사용자 백업",
+      "pos": [700, 300],
+      "size": [170, 64]
+    },
+    {
+      "id": "xpad",
+      "type": "external",
+      "label": "XPAD Mini",
+      "sublabel": "240×135 LCD · P1~P5 · 노브",
+      "pos": [930, 300],
+      "size": [170, 64],
+      "tag": "VID 3710 · PID 2507"
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "XPAD Mini Now Playing 앱",
+      "wraps": ["monitor", "main", "renderer", "worker", "player", "config"]
+    },
+    {
+      "kind": "security-group",
+      "label": "RAM-only 장치 경계",
+      "wraps": ["worker", "xpad"]
+    }
+  ],
+  "connections": [
+    {
+      "from": "music",
+      "to": "monitor"
+    },
+    {
+      "from": "monitor",
+      "to": "main",
+      "label": "TrackInfo",
+      "variant": "emphasis"
+    },
+    {
+      "from": "main",
+      "to": "renderer"
+    },
+    {
+      "from": "renderer",
+      "to": "worker",
+      "variant": "emphasis"
+    },
+    {
+      "from": "main",
+      "to": "player",
+      "label": "상태 push",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "route": "orthogonal-v"
+    },
+    {
+      "from": "renderer",
+      "to": "player",
+      "label": "PNG 미리보기",
+      "fromSide": "bottom",
+      "toSide": "right",
+      "route": "orthogonal-v",
+      "labelDx": 28
+    },
+    {
+      "from": "player",
+      "to": "config"
+    },
+    {
+      "from": "config",
+      "to": "main",
+      "label": "정규화된 설정",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "route": "orthogonal-v",
+      "labelDx": 44
+    },
+    {
+      "from": "worker",
+      "to": "xpad",
+      "label": "Vendor HID 0x02 · 0x10 · 0x25",
+      "variant": "security",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "route": "orthogonal-v"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "음악 화면",
+      "items": [
+        "곡 정보와 앨범아트를 240×135 프레임으로 변환",
+        "같은 PNG를 앱 미리보기에도 사용",
+        "변경 청크만 보내고 주기적으로 전체 프레임 재동기화"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "격리",
+      "items": [
+        "HID I/O는 Worker Thread에서 실행",
+        "UI와 음악 조회는 장치 전송에 막히지 않음",
+        "연결 해제 시 3초 간격 자동 재탐색"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "안전 경계",
+      "items": [
+        "사용 명령은 0x02 · 0x10 · 0x25로 제한",
+        "Save · 펌웨어 · LED · 부트로더 명령 미사용",
+        "앱 종료 시 임시 키와 노브 매핑 원복"
+      ]
+    }
+  ]
+}

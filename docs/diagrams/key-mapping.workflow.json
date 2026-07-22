@@ -1,0 +1,271 @@
+{
+  "schema_version": 1,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "P2~P5 앱 키매핑 동작",
+    "subtitle": "설정 → RAM 적용 → 물리 키 실행 → 종료 원복",
+    "output": "key-mapping.html",
+    "viewBox": [720, 760]
+  },
+  "lanes": [
+    { "id": "ui", "label": "사용자 · 설정 UI" },
+    { "id": "main", "label": "Electron Main · KeyActionRouter" },
+    { "id": "worker", "label": "Device Worker · 안전 적용" },
+    { "id": "device", "label": "XPAD Mini · macOS 입력" }
+  ],
+  "nodes": [
+    {
+      "id": "choose",
+      "lane": "ui",
+      "col": 0,
+      "type": "frontend",
+      "label": "앱 선택",
+      "sublabel": "P2~P5 하단 3키",
+      "width": 92
+    },
+    {
+      "id": "save",
+      "lane": "ui",
+      "col": 1,
+      "type": "frontend",
+      "label": "저장 · 적용",
+      "sublabel": ".app 절대경로",
+      "width": 84
+    },
+    {
+      "id": "press",
+      "lane": "ui",
+      "col": 4,
+      "type": "external",
+      "label": "물리 키 누름",
+      "sublabel": "선택 프로필",
+      "width": 82
+    },
+    {
+      "id": "quit",
+      "lane": "ui",
+      "col": 5,
+      "type": "external",
+      "label": "앱 종료",
+      "sublabel": "정상 shutdown",
+      "width": 74
+    },
+    {
+      "id": "validate",
+      "lane": "main",
+      "col": 0,
+      "type": "security",
+      "label": "앱 검증",
+      "sublabel": "macOS .app만 허용",
+      "width": 84
+    },
+    {
+      "id": "shortcut",
+      "lane": "main",
+      "col": 2,
+      "type": "backend",
+      "label": "F키 등록",
+      "sublabel": "전역 단축키",
+      "width": 82
+    },
+    {
+      "id": "route",
+      "lane": "main",
+      "col": 4,
+      "type": "backend",
+      "label": "동작 라우팅",
+      "sublabel": "왼쪽 · 가운데 · 오른쪽",
+      "width": 90
+    },
+    {
+      "id": "launch",
+      "lane": "main",
+      "col": 5,
+      "type": "cloud",
+      "label": "앱 실행",
+      "sublabel": "shell.openPath()",
+      "width": 74
+    },
+    {
+      "id": "backup",
+      "lane": "worker",
+      "col": 1,
+      "type": "database",
+      "label": "12키 백업",
+      "sublabel": "P2~P5 × 3",
+      "width": 80
+    },
+    {
+      "id": "apply",
+      "lane": "worker",
+      "col": 3,
+      "type": "messagebus",
+      "label": "RAM 임시 적용",
+      "sublabel": "쓰기마다 readback",
+      "width": 90
+    },
+    {
+      "id": "restore",
+      "lane": "worker",
+      "col": 5,
+      "type": "security",
+      "label": "원본 복원",
+      "sublabel": "역순 rollback",
+      "width": 80
+    },
+    {
+      "id": "profile",
+      "lane": "device",
+      "col": 0,
+      "type": "external",
+      "label": "프로필 순회",
+      "sublabel": "0x02 SystemInfo",
+      "width": 86
+    },
+    {
+      "id": "keyinfo",
+      "lane": "device",
+      "col": 2,
+      "type": "external",
+      "label": "KeyInfo 변경",
+      "sublabel": "0x10 · F16/F17/F18",
+      "width": 92
+    },
+    {
+      "id": "emit",
+      "lane": "device",
+      "col": 4,
+      "type": "external",
+      "label": "키 입력 발생",
+      "sublabel": "macOS keyboard HID",
+      "width": 80
+    },
+    {
+      "id": "original",
+      "lane": "device",
+      "col": 5,
+      "type": "external",
+      "label": "출고 키 복귀",
+      "sublabel": "Save 미사용",
+      "width": 80
+    }
+  ],
+  "edges": [
+    { "from": "choose", "to": "save", "variant": "default" },
+    {
+      "from": "save",
+      "to": "validate",
+      "label": "IPC",
+      "variant": "security",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "route": "drop"
+    },
+    { "from": "validate", "to": "shortcut", "variant": "emphasis" },
+    {
+      "from": "shortcut",
+      "to": "backup",
+      "label": "등록 성공 후",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "route": "drop"
+    },
+    {
+      "from": "backup",
+      "to": "profile",
+      "label": "첫 쓰기 전",
+      "variant": "security",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "route": "drop",
+      "bias": 0.65
+    },
+    { "from": "profile", "to": "keyinfo", "variant": "security" },
+    {
+      "from": "keyinfo",
+      "to": "apply",
+      "label": "검증 완료",
+      "variant": "emphasis",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "route": "drop"
+    },
+    {
+      "from": "apply",
+      "to": "press",
+      "label": "사용 준비",
+      "variant": "emphasis",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "route": "up-channel",
+      "channelY": 34,
+      "labelSegment": 1
+    },
+    {
+      "from": "press",
+      "to": "emit",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "route": "drop"
+    },
+    {
+      "from": "emit",
+      "to": "route",
+      "label": "F16~F18",
+      "variant": "emphasis",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "route": "drop"
+    },
+    { "from": "route", "to": "launch", "variant": "emphasis" },
+    {
+      "from": "quit",
+      "to": "restore",
+      "variant": "security",
+      "fromSide": "right",
+      "toSide": "right",
+      "route": "outside-right",
+      "labelSegment": 1
+    },
+    {
+      "from": "restore",
+      "to": "original",
+      "label": "56B 원본",
+      "variant": "security",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "route": "drop"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "버튼 대응",
+      "items": [
+        "왼쪽 = F16 · 가운데 = F17 · 오른쪽 = F18",
+        "선택된 P2~P5 프로필의 로컬 동작으로 라우팅",
+        "P1은 이전 곡 · 재생/일시정지 · 다음 곡으로 고정"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "실패 안전",
+      "items": [
+        "첫 쓰기 전에 12개 KeyInfo 원본을 모두 백업",
+        "쓰기마다 56바이트 전체 readback 검증",
+        "부분 실패 · 비활성화 · 정상 종료 시 원복"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "영구 변경 없음",
+      "items": [
+        "장치 RAM만 변경하고 Save(0x0D)는 호출하지 않음",
+        "Profile 1 하단 키와 노브 클릭은 변경하지 않음",
+        "LED · 펌웨어 · 부트로더 명령 미사용"
+      ]
+    }
+  ]
+}
