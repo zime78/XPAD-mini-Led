@@ -2,6 +2,7 @@ import { BrowserWindow } from 'electron';
 import { PNG } from 'pngjs';
 import { AppConfig, TrackInfo } from '../../shared/types';
 import { LCD_HEIGHT, LCD_WIDTH } from '../device/protocol';
+import { renderVolumeOverlay, type VolumeFeedback } from './volume-overlay';
 
 export interface RenderedFrame {
   rgb565: Buffer;
@@ -10,7 +11,8 @@ export interface RenderedFrame {
 
 export async function renderTrackFrame(
   track: TrackInfo,
-  config: AppConfig
+  config: AppConfig,
+  volumeFeedback: VolumeFeedback | null = null
 ): Promise<RenderedFrame> {
   const artwork = config.showArtwork ? track.artworkDataUrl : undefined;
   const accent = track.service === 'spotify' ? '#1ed760' : '#fa2d48';
@@ -52,6 +54,7 @@ export async function renderTrackFrame(
   <text x="${left}" y="123" font-family="Arial Unicode MS, sans-serif" font-size="11" fill="${accent}">${icon}</text>
   <rect x="${left + 17}" y="116" width="${Math.max(0, textWidth - 17)}" height="5" rx="2.5" fill="#263141"/>
   <rect x="${left + 17}" y="116" width="${Math.max(0, progressWidth - 17)}" height="5" rx="2.5" fill="${accent}"/>
+  ${renderVolumeOverlay(volumeFeedback, accent)}
 </svg>`;
 
   const html = `<!doctype html>

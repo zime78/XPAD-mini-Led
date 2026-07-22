@@ -6,6 +6,24 @@ import { DiagnosticLog } from '../diagnostic-log';
 const VOLUME_DOWN_ACCELERATOR = 'F20';
 const VOLUME_UP_ACCELERATOR = 'F19';
 
+export interface FineVolumeAdjustment {
+  volume: number;
+}
+
+interface VolumeAdjustmentResult {
+  before: number;
+  target: number;
+  after: number;
+  requestedSteps: number;
+  movedSteps: number;
+  attemptCount: number;
+}
+
+type FineVolumeAdjuster = (
+  detents: number,
+  stepsPerDetent: number
+) => Promise<VolumeAdjustmentResult>;
+
 export class FineVolumeController extends EventEmitter {
   private stepsPerDetent = 1;
   private registered = false;
@@ -15,7 +33,10 @@ export class FineVolumeController extends EventEmitter {
   private adjustmentSequence = 0;
   lastError: string | null = null;
 
-  constructor(private diagnostics: DiagnosticLog) {
+  constructor(
+    private diagnostics: Pick<DiagnosticLog, 'log'>,
+    private adjustVolume: FineVolumeAdjuster = adjustSystemVolume
+  ) {
     super();
   }
 
@@ -108,7 +129,7 @@ export class FineVolumeController extends EventEmitter {
           stepsPerDetent,
           requestedSteps: Math.abs(detents) * stepsPerDetent,
         });
-        const result = await adjustSystemVolume(detents, stepsPerDetent);
+        const result = await this.adjustVolume(detents, stepsPerDetent);
         this.diagnostics.log('adjustment-completed', {
           adjustmentId,
           detents,
@@ -127,6 +148,10 @@ export class FineVolumeController extends EventEmitter {
           durationMs: Date.now() - startedAt,
         });
         this.setError(null);
+        const adjustment: FineVolumeAdjustment = {
+          volume: Math.min(100, Math.max(0, Math.round(result.after))),
+        };
+        this.emit('volume-adjusted', adjustment);
       }
     } catch (error) {
       const discardedDetents = this.pendingDetents;
@@ -149,15 +174,6 @@ export class FineVolumeController extends EventEmitter {
     this.lastError = error;
     this.emit('status');
   }
-}
-
-interface VolumeAdjustmentResult {
-  before: number;
-  target: number;
-  after: number;
-  requestedSteps: number;
-  movedSteps: number;
-  attemptCount: number;
 }
 
 function adjustSystemVolume(

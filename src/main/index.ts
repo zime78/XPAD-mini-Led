@@ -30,6 +30,7 @@ import { loadConfig, saveConfig } from './config';
 import { DiagnosticLog } from './diagnostic-log';
 import { DeviceHost } from './device/device-host';
 import { renderTrackFrame } from './display/frame-renderer';
+import type { VolumeFeedback } from './display/volume-overlay';
 import { KeyboardBackupStore } from './keyboard-backups';
 import {
   isLaunchableAppPath,
@@ -37,7 +38,10 @@ import {
   normalizeKeyboardSettings,
   parseKeyboardAction,
 } from './keyboard-settings';
-import { FineVolumeController } from './input/fine-volume';
+import {
+  type FineVolumeAdjustment,
+  FineVolumeController,
+} from './input/fine-volume';
 import { KeyActionRouter } from './input/key-action-router';
 import { NowPlayingMonitor } from './music/now-playing';
 import { controlPlayback } from './music/playback-controls';
@@ -56,9 +60,17 @@ let keyActionRouter: KeyActionRouter;
 let currentTrack: TrackInfo = structuredClone(EMPTY_TRACK);
 let previewDataUrl: string | null = null;
 let renderSequence = 0;
-let pendingRender: { sequence: number; track: TrackInfo; config: AppConfig } | null = null;
+let pendingRender: {
+  sequence: number;
+  track: TrackInfo;
+  config: AppConfig;
+  volumeFeedback: VolumeFeedback | null;
+} | null = null;
 let rendering = false;
+let activeVolumeFeedback: VolumeFeedback | null = null;
+let volumeFeedbackTimer: ReturnType<typeof setTimeout> | null = null;
 const hidDisabled = process.env.XPAD_DISABLE_HID === '1';
+const VOLUME_FEEDBACK_DURATION_MS = 1600;
 
 function resourcePath(...parts: string[]): string {
   const root = app.isPackaged ? process.resourcesPath : path.join(__dirname, '../..');
@@ -233,8 +245,28 @@ function renderAndSend(track: TrackInfo): void {
     sequence,
     track: structuredClone(track),
     config: structuredClone(config),
+    volumeFeedback: activeVolumeFeedback
+      ? structuredClone(activeVolumeFeedback)
+      : null,
   };
   if (!rendering) void drainRenderQueue();
+}
+
+function showVolumeFeedback(adjustment: FineVolumeAdjustment): void {
+  activeVolumeFeedback = { volume: adjustment.volume };
+  if (volumeFeedbackTimer) clearTimeout(volumeFeedbackTimer);
+  renderAndSend(currentTrack);
+  volumeFeedbackTimer = setTimeout(() => {
+    volumeFeedbackTimer = null;
+    activeVolumeFeedback = null;
+    renderAndSend(currentTrack);
+  }, VOLUME_FEEDBACK_DURATION_MS);
+}
+
+function disposeVolumeFeedback(): void {
+  if (volumeFeedbackTimer) clearTimeout(volumeFeedbackTimer);
+  volumeFeedbackTimer = null;
+  activeVolumeFeedback = null;
 }
 
 async function drainRenderQueue(): Promise<void> {
@@ -244,7 +276,11 @@ async function drainRenderQueue(): Promise<void> {
       const job = pendingRender;
       pendingRender = null;
       try {
-        const rendered = await renderTrackFrame(job.track, job.config);
+        const rendered = await renderTrackFrame(
+          job.track,
+          job.config,
+          job.volumeFeedback
+        );
         if (job.sequence !== renderSequence) continue;
         previewDataUrl = rendered.previewDataUrl;
         if (!hidDisabled) deviceHost.setFrame(rendered.rgb565);
@@ -507,6 +543,7 @@ if (!gotLock) {
     });
     deviceHost.on('knob-backup', storeKnobKeymapBackup);
     fineVolumeController.on('status', broadcastStatus);
+    fineVolumeController.on('volume-adjusted', showVolumeFeedback);
     keyActionRouter.on('status', broadcastKeyboardStatus);
     monitor.on('change', (track: TrackInfo) => {
       currentTrack = track;
@@ -549,6 +586,7 @@ if (!gotLock) {
     const finish = () => {
       if (finished) return;
       finished = true;
+      disposeVolumeFeedback();
       keyActionRouter?.dispose();
       fineVolumeController?.dispose();
       diagnosticLog?.log('app-stopped');

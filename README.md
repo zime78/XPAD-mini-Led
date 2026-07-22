@@ -26,6 +26,8 @@ macOS의 Spotify와 Apple Music에서 현재 재생 중인 곡을 읽어 Pulsar 
 - 곡명, 아티스트, 앨범, 재생 상태와 진행률 표시
 - 앨범아트 표시
 - XPAD 노브 한 칸을 실제 출력 단계와 맞춘 미세 볼륨 조절(한 칸당 1·2·3·5단계 설정)
+- 노브 조절 직후 실제 macOS 출력 볼륨을 LCD와 앱 미리보기에 퍼센트·막대로 표시하고
+  마지막 입력 1.6초 후 곡 화면으로 자동 복귀
 - XPAD Mini 자동 재연결
 - 로그인 시 자동 실행 옵션
 - HID 명령 `0x25`를 사용한 RAM 전용 LCD 스트리밍
@@ -98,9 +100,12 @@ git에 커밋되는 파일 기준의 워크트리입니다 (생성물 `out/`·`d
 │  │  ├─ music/
 │  │  │  └─ now-playing.ts          # AppleScript로 Spotify/Music 폴링·앨범아트 수집
 │  │  ├─ display/
-│  │  │  └─ frame-renderer.ts       # 트랙 정보 → SVG → RGB565 LCD 프레임 렌더링
+│  │  │  ├─ frame-renderer.ts       # 트랙 정보·볼륨 OSD → RGB565 LCD 프레임 렌더링
+│  │  │  ├─ volume-overlay.ts       # 실제 출력 볼륨 퍼센트·막대 SVG 생성
+│  │  │  └─ volume-overlay.test.ts  # 볼륨 값·막대·0/100% 경계 자동 검증
 │  │  ├─ input/
-│  │  │  └─ fine-volume.ts          # F20/F19 → 다음 실제 출력 단계 탐색·조절
+│  │  │  ├─ fine-volume.ts          # F20/F19 → 다음 실제 출력 단계 탐색·결과 전달
+│  │  │  └─ fine-volume.test.ts     # 조절 후 실제 readback 이벤트 자동 검증
 │  │  └─ device/
 │  │     ├─ device-host.ts          # 디바이스 워커 스레드 프록시 (main 쪽)
 │  │     ├─ device-worker.ts        # HID I/O 워커 — 220ms 주기 프레임 스트리밍

@@ -5,7 +5,7 @@
 - Status: Active
 - Last refreshed: 2026-07-22
 - Primary product surfaces: 소형 Electron 재생 창, 독립 Electron 일반 설정 창, 독립 키보드 설정 창, XPAD Mini LCD 미리보기
-- Evidence reviewed: `src/renderer/src/App.tsx`, `src/renderer/src/components/app-header.tsx`, `src/renderer/src/components/settings-view.tsx`, `src/renderer/src/styles.css`, `src/main/index.ts`, `src/main/device/protocol.ts`, `src/preload/index.ts`, `src/shared/types.ts`, `docs/PROTOCOL.md`, `docs/XPAD_MINI_DIRECT_API.md`, 사용자가 제공한 설정 아이콘 및 XPAD 키보드 배치 이미지, `https://bbb.pulsar.gg/sKey/`의 장치 연결 전 화면
+- Evidence reviewed: `src/renderer/src/App.tsx`, `src/renderer/src/components/app-header.tsx`, `src/renderer/src/components/settings-view.tsx`, `src/renderer/src/styles.css`, `src/main/index.ts`, `src/main/input/fine-volume.ts`, `src/main/display/frame-renderer.ts`, `src/main/device/protocol.ts`, `src/preload/index.ts`, `src/shared/types.ts`, `docs/PROTOCOL.md`, `docs/XPAD_MINI_DIRECT_API.md`, 사용자가 제공한 설정 아이콘 및 XPAD 키보드 배치 이미지·볼륨 피드백이 없는 LCD 미리보기, `https://bbb.pulsar.gg/sKey/`의 장치 연결 전 화면
 
 ## Brand
 
@@ -19,8 +19,9 @@
 - Goals: 설정 항목을 독립 컴포넌트 단위로 분리해 새 설정 섹션과 상태 카드를 쉽게 추가할 수 있게 한다.
 - Goals: 설정 아이콘 왼쪽의 키보드 아이콘으로 전용 창을 열고, Profile 1은 이전 곡·재생/일시정지·다음 곡으로 고정하며 Profile 2~5의 하단 3개 키를 지원 키 또는 macOS 앱 실행에 연결한다.
 - Goals: 사용자가 이름과 설명을 입력해 Profile 2~5 설정을 최대 10개까지 백업하고, 저장 당시 설정을 편집 화면에 정확히 복원한다. Profile 1은 백업 데이터와 무관하게 고정값을 유지한다.
-- Non-goals: 볼륨 조절과 기존 미세 볼륨 기능 변경, 노브 좌/우·클릭, 상단 `PF1`, 화면·원형 컨트롤, 장치 플래시/Save/펌웨어 변경, 매크로·스크립트 실행, Windows/Linux 지원
-- Success signals: 현재 안전 범위에서는 사용자가 프로파일과 키를 선택해 동작을 지정하고, 최대 10개 로컬 백업을 관리하며, 복원 내용을 검토한 뒤 로컬 설정을 저장할 수 있다. 실제 장치 키맵 적용·원복은 프로토콜 안전 게이트 통과 전까지 제공하지 않는다.
+- Goals: XPAD 노브로 볼륨을 조절하면 실제 적용된 출력값을 LCD와 앱 미리보기에 즉시 표시하고 마지막 입력 1.6초 후 곡 화면으로 복귀한다.
+- Non-goals: 기존 미세 볼륨 단계 계산과 노브 HID 매핑 변경, 노브 클릭, 상단 `PF1`, 화면·원형 컨트롤, 장치 플래시/Save/펌웨어 변경, 매크로·스크립트 실행, Windows/Linux 지원
+- Success signals: 현재 안전 범위에서는 사용자가 프로파일과 키를 선택해 동작을 지정하고, 최대 10개 로컬 백업을 관리하며, 복원 내용을 검토한 뒤 로컬 설정을 저장할 수 있다. XPAD 노브 조절 직후에는 LCD에서 실제 출력값을 식별할 수 있다. 실제 장치 키맵 적용·원복은 프로토콜 안전 게이트 통과 전까지 제공하지 않는다.
 
 ## Personas and jobs
 
@@ -41,6 +42,7 @@
 - 직접 조작: 사용자가 지정한 하단 물리 버튼 3개만 큰 클릭 영역으로 표시하고, 선택한 버튼의 설정만 오른쪽 패널에 노출한다.
 - 안전한 기본값: 노브·PF1·화면·원형 컨트롤은 키 설정 화면의 편집 컨트롤과 포커스 순서에서 완전히 제외한다.
 - 비간섭: 기존 볼륨 기능의 노브 엔트리 14/15, F19/F20, `fineVolume*` 설정·상태·로그·안전 백업은 읽거나 변경하지 않는다.
+- 즉각 피드백: 볼륨 조절 성공 후 실제 readback 값을 큰 숫자와 막대로 표시하고, 연속 입력은 최신 값으로 교체하며 표시 시간을 마지막 입력부터 다시 센다.
 - 명시적 복원: 사용자 백업 복원은 편집 초안만 바꾸며 별도의 `장치에 적용` 전에는 HID 쓰기를 하지 않는다.
 - 백업 분리: 이름·설명을 갖는 사용자 설정 백업과 장치 원복용 원본 KeyInfo 안전 백업을 문구·저장소·UI에서 구분한다.
 - 확장 가능한 경계: 음악/HID 데이터 수명주기는 Electron main, 안전한 창 동작은 preload IPC, 역할별 화면 표현은 renderer 컴포넌트가 담당한다.
@@ -58,8 +60,8 @@
 ## Components
 
 - Existing components to reuse: LCD 미리보기 셸, 곡 정보, 상태 카드, 표시 설정 필드, 노브 설정 필드, 저장 바
-- New/changed components: `KeyboardSettingsButton`, `KeyboardSettingsView`, `ProfileSelector`, 하단 3버튼 전용 `DeviceKeyMap`, `KeyActionEditor`, `ApplicationPicker`, `BackupManager`, `BackupEditor`, `RestorePreview`, main의 keyboard 창 생성 함수
-- Variants and states: P1 보기 전용 고정/P2~P5 편집 선택/별도 F16~F18 사용 프로필, 키 선택/미선택, 키 변경/앱 실행, 미지원 한 줄 표시, 앱 미선택/선택/경로 오류, 백업 0~9개/10개 가득 참, 복원 초안/덮어쓰기/삭제 확인, 적용 전/적용 중/적용됨/롤백됨, 장치 미연결/LCD 프로토콜 미준비 시 전체 설정 잠금, 안전 검증 실패
+- New/changed components: `KeyboardSettingsButton`, `KeyboardSettingsView`, `ProfileSelector`, 하단 3버튼 전용 `DeviceKeyMap`, `KeyActionEditor`, `ApplicationPicker`, `BackupManager`, `BackupEditor`, `RestorePreview`, main의 keyboard 창 생성 함수, LCD `VolumeFeedback` OSD
+- Variants and states: P1 보기 전용 고정/P2~P5 편집 선택/별도 F16~F18 사용 프로필, 키 선택/미선택, 키 변경/앱 실행, 미지원 한 줄 표시, 앱 미선택/선택/경로 오류, 백업 0~9개/10개 가득 참, 복원 초안/덮어쓰기/삭제 확인, 적용 전/적용 중/적용됨/롤백됨, 장치 미연결/LCD 프로토콜 미준비 시 전체 설정 잠금, 안전 검증 실패, 볼륨 0% 음소거 표시/1~99%/100% 경계 표시
 - Token/component ownership: 색·간격·라운드는 `styles.css`의 CSS custom property, 화면 구조와 상태 표현은 renderer 컴포넌트가 소유한다.
 
 ## Accessibility
@@ -82,6 +84,7 @@
 - Empty: 재생 곡이 없으면 공용 `EMPTY_TRACK` 문구와 LCD 준비 상태를 표시한다.
 - Error: 음악 조회와 노브 오류는 설정 화면의 장치 상태 다음에 표시한다.
 - Success: 저장 완료 메시지를 설정 저장 바에 표시한다.
+- Volume feedback: 조절 완료 시 기존 곡 화면 위에 고대비 OSD로 실제 출력값과 막대를 표시한다. 0%와 100%에서도 피드백을 표시하고 마지막 성공 입력 1.6초 후 자동으로 곡 화면을 복원한다.
 - Disabled: 변경이 없으면 저장/되돌리기, 미세 볼륨이 꺼져 있으면 단계 선택을 비활성화한다.
 - Applying: 현재는 로컬 설정 저장 중 중복 동작을 막는다. 장치 키맵 적용 상태는 안전 게이트 통과 후 추가한다.
 - Rollback: F16~F18 등록에 실패하면 이 기능이 소유한 세 단축키를 모두 해제하고 오류를 표시한다. 장치 키맵 롤백은 아직 실행 경로가 없다.
@@ -103,9 +106,9 @@
 - Performance constraints: 창을 분리해도 음악/HID 폴링은 main에서 한 번만 실행하고 상태 스냅샷을 열린 모든 창에 브로드캐스트한다.
 - Compatibility constraints: macOS 전용 동작이다. Profile 1은 고정값을 사용하고 Profile 2~5 실제 하단 키만 SystemInfo의 `cfg_selection` RAM 전환과 최종 원복 readback으로 읽는다. 일반 키 HID 쓰기는 `docs/plan/keyboard-settings/PLAN.md`의 전체 rollback 안전 게이트를 통과한 범위만 허용한다.
 - Connection constraints: 키보드와 일반 설정 창은 열어 연결 상태와 차단 사유를 확인할 수 있지만, USB 연결과 LCD 프로토콜 준비가 모두 완료되기 전에는 설정·저장·백업·복원·테스트를 허용하지 않는다. renderer 비활성화와 main IPC 검사를 함께 적용한다.
-- Existing-feature constraints: 키보드 기능은 볼륨 조절, 노브 엔트리 14/15, F19/F20, `fineVolumeEnabled`, `fineVolumeStepsPerDetent`, `knobKeymapBackup`, 노브 상태·진단 로그를 수정하거나 초기화하지 않는다.
+- Existing-feature constraints: 볼륨 피드백은 기존 조절 결과를 읽어 표시만 하며 노브 엔트리 14/15, F19/F20, `fineVolumeEnabled`, `fineVolumeStepsPerDetent`, `knobKeymapBackup`, 조절 알고리즘·노브 상태·진단 로그를 수정하거나 초기화하지 않는다.
 - Security constraints: 앱 선택은 native open dialog로 받은 기존 `.app` 절대경로만 허용하고 셸 명령·인자·URL을 저장하거나 실행하지 않는다.
-- Test/screenshot expectations: 역할별 화면/창 요청/P1 고정/P2~P5 하단 3버튼 편집/미지원 코드 비노출/백업 최대 10개/정확 복원/F16~F18 전용 등록과 기존 미세 볼륨 비간섭을 자동 검증하고, `./build.sh check`, `./build.sh dev-ui`, 승인된 HID 실기기 절차를 분리해 기록한다.
+- Test/screenshot expectations: 역할별 화면/창 요청/P1 고정/P2~P5 하단 3버튼 편집/미지원 코드 비노출/백업 최대 10개/정확 복원/F16~F18 전용 등록과 기존 미세 볼륨 비간섭, 볼륨 이벤트의 실제 readback 전달, OSD 값·막대·경계 클램프를 자동 검증하고, `./build.sh check`, `./build.sh dev-ui`, 승인된 HID 실기기 절차를 분리해 기록한다.
 
 ## Open questions
 
