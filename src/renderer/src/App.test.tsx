@@ -38,11 +38,14 @@ describe('XPAD Mini Now Playing 화면', () => {
   let emitStatus: (next: StatusSnapshot) => void;
 
   beforeEach(() => {
+    window.history.replaceState({}, '', '/');
     window.xpad = {
       getStatus: vi.fn().mockResolvedValue(status),
       getConfig: vi.fn().mockResolvedValue(config),
       setConfig: vi.fn().mockImplementation(async (next) => next),
       refreshNowPlaying: vi.fn().mockResolvedValue(status),
+      openSettingsWindow: vi.fn().mockResolvedValue(undefined),
+      closeSettingsWindow: vi.fn().mockResolvedValue(undefined),
       onStatusChanged: vi.fn().mockImplementation((callback: (next: StatusSnapshot) => void) => {
         emitStatus = callback;
         return () => undefined;
@@ -70,12 +73,21 @@ describe('XPAD Mini Now Playing 화면', () => {
     expect(screen.queryByRole('heading', { name: '표시 설정' })).toBeNull();
   });
 
-  it('설정 아이콘으로 상태와 설정을 열고 재생 화면으로 돌아간다', async () => {
+  it('설정 아이콘으로 별도 설정 창을 요청하고 재생 화면은 유지한다', async () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole('button', { name: '설정 열기' }));
 
-    expect(screen.getByRole('heading', { name: '설정', level: 1 })).toBeTruthy();
+    await waitFor(() => expect(window.xpad.openSettingsWindow).toHaveBeenCalledOnce());
+    expect(screen.getByRole('heading', { name: "Say You Won't Let Go" })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: '설정', level: 1 })).toBeNull();
+  });
+
+  it('설정 창에서 상세 상태를 표시하고 현재 창 닫기를 요청한다', async () => {
+    window.history.replaceState({}, '', '/?view=settings');
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: '설정', level: 1 })).toBeTruthy();
     expect(screen.getByText('USB 장치')).toBeTruthy();
     expect(screen.getByText('LCD 프로토콜')).toBeTruthy();
     expect(screen.getByRole('heading', { name: '표시 설정' })).toBeTruthy();
@@ -83,10 +95,9 @@ describe('XPAD Mini Now Playing 화면', () => {
     expect(screen.getByRole('button', { name: '현재 곡 새로고침' })).toBeTruthy();
     expect(screen.queryByRole('heading', { name: "Say You Won't Let Go" })).toBeNull();
 
-    fireEvent.click(screen.getByRole('button', { name: '재생 화면으로 돌아가기' }));
+    fireEvent.click(screen.getByRole('button', { name: '설정 창 닫기' }));
 
-    expect(screen.getByRole('heading', { name: "Say You Won't Let Go" })).toBeTruthy();
-    expect(screen.queryByText('USB 장치')).toBeNull();
+    await waitFor(() => expect(window.xpad.closeSettingsWindow).toHaveBeenCalledOnce());
   });
 
   it('재생 패널의 장치 아이콘을 연결 상태에 따라 녹색 또는 빨간색으로 표시한다', async () => {
@@ -130,9 +141,10 @@ describe('XPAD Mini Now Playing 화면', () => {
   });
 
   it('설정 변경값을 저장하고 결과를 알린다', async () => {
+    window.history.replaceState({}, '', '/?view=settings');
     render(<App />);
 
-    fireEvent.click(await screen.findByRole('button', { name: '설정 열기' }));
+    expect(await screen.findByRole('heading', { name: '설정', level: 1 })).toBeTruthy();
     fireEvent.click(screen.getByRole('checkbox', { name: '앨범아트 표시' }));
     fireEvent.click(screen.getByRole('button', { name: '설정 저장' }));
 

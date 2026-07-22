@@ -8,6 +8,8 @@ const api = {
     ipcRenderer.invoke('set-config', config),
   refreshNowPlaying: (): Promise<StatusSnapshot> =>
     ipcRenderer.invoke('refresh-now-playing'),
+  openSettingsWindow: (): Promise<void> => ipcRenderer.invoke('open-settings-window'),
+  closeSettingsWindow: (): Promise<void> => ipcRenderer.invoke('close-settings-window'),
   onStatusChanged: (callback: (status: StatusSnapshot) => void): (() => void) => {
     const listener = (_event: unknown, status: StatusSnapshot) => callback(status);
     ipcRenderer.on('status-changed', listener);

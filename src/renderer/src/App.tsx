@@ -6,23 +6,46 @@ import { SettingsView } from './components/settings-view';
 
 type AppView = 'player' | 'settings';
 
+function windowView(): AppView {
+  return new URLSearchParams(window.location.search).get('view') === 'settings'
+    ? 'settings'
+    : 'player';
+}
+
 export function App() {
+  const view = windowView();
   const [status, setStatus] = useState<StatusSnapshot | null>(null);
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [saved, setSaved] = useState<AppConfig | null>(null);
   const [message, setMessage] = useState('');
-  const [view, setView] = useState<AppView>('player');
 
   useEffect(() => {
     void window.xpad.getStatus().then(setStatus);
-    void window.xpad.getConfig().then((value) => {
-      setConfig(value);
-      setSaved(value);
-    });
+    if (view === 'settings') {
+      void window.xpad.getConfig().then((value) => {
+        setConfig(value);
+        setSaved(value);
+      });
+    }
     return window.xpad.onStatusChanged(setStatus);
-  }, []);
+  }, [view]);
 
-  if (!status || !config || !saved) {
+  if (!status) {
+    return <main className="loading-screen">불러오는 중…</main>;
+  }
+
+  if (view === 'player') {
+    return (
+      <main className="app-shell player-screen">
+        <PlayerView
+          status={status}
+          onOpenSettings={() => void window.xpad.openSettingsWindow()}
+        />
+      </main>
+    );
+  }
+
+  if (!config || !saved) {
     return <main className="loading-screen">불러오는 중…</main>;
   }
 
@@ -47,24 +70,18 @@ export function App() {
   };
 
   return (
-    <main className={`app-shell ${view === 'player' ? 'player-screen' : 'settings-screen'}`}>
-      {view === 'settings' && (
-        <AppHeader onCloseSettings={() => setView('player')} />
-      )}
-      {view === 'player' ? (
-        <PlayerView status={status} onOpenSettings={() => setView('settings')} />
-      ) : (
-        <SettingsView
-          status={status}
-          config={config}
-          dirty={dirty}
-          message={message}
-          onPatch={patch}
-          onRefresh={refresh}
-          onReset={() => setConfig(saved)}
-          onSave={save}
-        />
-      )}
+    <main className="app-shell settings-screen">
+      <AppHeader onCloseSettings={() => void window.xpad.closeSettingsWindow()} />
+      <SettingsView
+        status={status}
+        config={config}
+        dirty={dirty}
+        message={message}
+        onPatch={patch}
+        onRefresh={refresh}
+        onReset={() => setConfig(saved)}
+        onSave={save}
+      />
     </main>
   );
 }

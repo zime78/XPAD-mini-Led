@@ -9,7 +9,7 @@ export function AppHeader({ onCloseSettings }: AppHeaderProps) {
         <h1>설정</h1>
         <p className="subtitle">장치 상태와 음악 표시 방식을 관리합니다.</p>
       </div>
-      <IconButton label="재생 화면으로 돌아가기" onClick={onCloseSettings}>
+      <IconButton label="설정 창 닫기" onClick={onCloseSettings}>
         <CloseIcon />
       </IconButton>
     </header>

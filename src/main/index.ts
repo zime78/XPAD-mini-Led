@@ -15,6 +15,7 @@ import { FineVolumeController } from './input/fine-volume';
 import { NowPlayingMonitor } from './music/now-playing';
 
 let tray: Tray | null = null;
+let playerWindow: BrowserWindow | null = null;
 let settingsWindow: BrowserWindow | null = null;
 let config: AppConfig;
 let deviceHost: DeviceHost;
@@ -61,6 +62,7 @@ function currentStatus(): StatusSnapshot {
 function broadcastStatus(): void {
   const status = currentStatus();
   updateTray(status);
+  playerWindow?.webContents.send('status-changed', status);
   settingsWindow?.webContents.send('status-changed', status);
 }
 
@@ -90,6 +92,50 @@ function updateTray(status: StatusSnapshot): void {
   );
 }
 
+function loadAppWindow(targetWindow: BrowserWindow, view: 'player' | 'settings'): void {
+  if (process.env.ELECTRON_RENDERER_URL) {
+    const rendererUrl = new URL(process.env.ELECTRON_RENDERER_URL);
+    rendererUrl.searchParams.set('view', view);
+    void targetWindow.loadURL(rendererUrl.toString());
+  } else {
+    void targetWindow.loadFile(path.join(__dirname, '../renderer/index.html'), {
+      query: { view },
+    });
+  }
+}
+
+function windowWebPreferences(): Electron.WebPreferences {
+  return {
+    preload: path.join(__dirname, '../preload/index.js'),
+    contextIsolation: true,
+    nodeIntegration: false,
+  };
+}
+
+function openPlayerWindow(): void {
+  if (playerWindow) {
+    playerWindow.show();
+    playerWindow.focus();
+    return;
+  }
+  playerWindow = new BrowserWindow({
+    width: 680,
+    height: 320,
+    minWidth: 680,
+    minHeight: 320,
+    maxWidth: 680,
+    maxHeight: 320,
+    resizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    title: 'XPAD Mini Now Playing',
+    autoHideMenuBar: true,
+    webPreferences: windowWebPreferences(),
+  });
+  playerWindow.on('closed', () => (playerWindow = null));
+  loadAppWindow(playerWindow, 'player');
+}
+
 function openSettingsWindow(): void {
   if (settingsWindow) {
     settingsWindow.show();
@@ -101,20 +147,12 @@ function openSettingsWindow(): void {
     height: 690,
     minWidth: 680,
     minHeight: 620,
-    title: 'XPAD Mini Now Playing',
+    title: 'XPAD Mini Now Playing 설정',
     autoHideMenuBar: true,
-    webPreferences: {
-      preload: path.join(__dirname, '../preload/index.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
+    webPreferences: windowWebPreferences(),
   });
   settingsWindow.on('closed', () => (settingsWindow = null));
-  if (process.env.ELECTRON_RENDERER_URL) {
-    void settingsWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
-  } else {
-    void settingsWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
-  }
+  loadAppWindow(settingsWindow, 'settings');
 }
 
 function renderAndSend(track: TrackInfo): void {
@@ -188,6 +226,12 @@ function registerIpc(): void {
   ipcMain.handle('get-status', () => currentStatus());
   ipcMain.handle('get-config', () => config);
   ipcMain.handle('set-config', (_event, next: AppConfig) => applyConfig(next));
+  ipcMain.handle('open-settings-window', () => openSettingsWindow());
+  ipcMain.handle('close-settings-window', (event) => {
+    const requester = BrowserWindow.fromWebContents(event.sender);
+    const target = settingsWindow;
+    if (requester === target) target?.close();
+  });
   ipcMain.handle('refresh-now-playing', async () => {
     await monitor.refresh();
     return currentStatus();
@@ -198,7 +242,7 @@ const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
 } else {
-  app.on('second-instance', () => openSettingsWindow());
+  app.on('second-instance', () => openPlayerWindow());
 
   app.whenReady().then(() => {
     app.setName('XPAD Mini Now Playing');
@@ -247,14 +291,14 @@ if (!gotLock) {
       );
     }
     tray = new Tray(trayIcon());
-    tray.on('double-click', () => openSettingsWindow());
+    tray.on('double-click', () => openPlayerWindow());
     configureLoginItem();
     renderAndSend(currentTrack);
     monitor.start();
-    openSettingsWindow();
+    openPlayerWindow();
   });
 
-  app.on('activate', () => openSettingsWindow());
+  app.on('activate', () => openPlayerWindow());
   app.on('window-all-closed', () => {});
 
   let shuttingDown = false;

@@ -26,6 +26,7 @@ button:disabled { opacity: .4; cursor: default; }
 button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .app-shell { width: min(100%, 720px); margin: 0 auto; padding: 28px 30px 24px; }
+.player-screen { width: 100%; padding: 6px; }
 .loading-screen { display: grid; min-height: 100vh; place-items: center; color: var(--text-muted); }
 .app-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 24px; }
 h1 { margin: 2px 0 4px; font-size: 32px; letter-spacing: -0.03em; }
@@ -83,15 +84,12 @@ input[type='checkbox'] { width: 16px; height: 16px; accent-color: #3b82f6; }
 .save-bar span { color: var(--success); font-size: 12px; }
 
 @media (max-width: 700px) {
-  .app-shell { padding-inline: 20px; }
-  .player-content { grid-template-columns: 1fr; }
-  .lcd-shell { margin-inline: auto; }
-  .track-info { text-align: center; }
+  .app-shell:not(.player-screen) { padding-inline: 20px; }
   .status-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 420px) {
-  .app-shell { padding-inline: 14px; }
+  .app-shell:not(.player-screen) { padding-inline: 14px; }
   .subtitle { max-width: 250px; }
   .settings-section label { align-items: flex-start; flex-direction: column; gap: 8px; padding-block: 10px; }
   .settings-section .toggle { flex-direction: row; align-items: center; }
