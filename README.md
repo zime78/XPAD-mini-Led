@@ -28,8 +28,8 @@ macOS의 Spotify와 Apple Music에서 현재 재생 중인 곡을 읽어 Pulsar 
 - XPAD 노브 한 칸을 실제 출력 단계와 맞춘 미세 볼륨 조절(한 칸당 1·2·3·5단계 설정)
 - 노브 조절 직후 실제 macOS 출력 볼륨을 LCD와 앱 미리보기에 퍼센트·막대로 표시하고
   마지막 입력 1.6초 후 곡 화면으로 자동 복귀
-- 재생 화면에서 P1~P5 실제 장치 프로필을 빠르게 전환하고 선택 프로필의 하단 버튼
-  3개 동작을 즉시 표시
+- 재생 화면에서 P1~P5 실제 장치 프로필을 빠르게 전환하고, SystemInfo readback 성공 뒤
+  선택 프로필의 하단 버튼 3개 동작과 F16~F18 로컬 라우팅 대상을 함께 갱신
 - XPAD Mini 자동 재연결
 - 로그인 시 자동 실행 옵션
 - HID 명령 `0x25`를 사용한 RAM 전용 LCD 스트리밍
@@ -97,7 +97,7 @@ git에 커밋되는 파일 기준의 워크트리입니다 (생성물 `out/`·`d
 │  ├─ shared/
 │  │  └─ types.ts                   # 전 프로세스 공용 타입 (TrackInfo, AppConfig 등)
 │  ├─ main/
-│  │  ├─ index.ts                   # 앱 수명 주기·트레이·재생/설정 창·IPC 오케스트레이션
+│  │  ├─ index.ts                   # 앱 수명 주기·트레이·재생/일반/키보드 창·IPC 오케스트레이션
 │  │  ├─ diagnostic-log.ts          # 개인정보 없는 노브 입력·볼륨 적용 JSONL 로그
 │  │  ├─ config.ts                  # userData/config.json 로드·저장·정규화
 │  │  ├─ music/
@@ -161,6 +161,8 @@ Bibimbap Web DRV나 다른 HID 도구와 동시에 연결하지 마십시오.
 ## 기술 문서
 
 - [현재 개발 내용 및 검증 보고서](docs/DEVELOPMENT_REPORT.md)
+- [재생 화면 P1~P5 단축 전환 설계·구현 기록](docs/plan/profile-quick-switch/GUI.md)
+- [키보드 설정·프로파일·백업 기능 계획과 구현 현황](docs/plan/keyboard-settings/PLAN.md)
 - [XPAD Mini 직접 연결 및 제어 기능 전체 가이드](docs/XPAD_MINI_DIRECT_API.md)
 - [저수준 HID 프로토콜](docs/PROTOCOL.md)
 - [문서 인덱스](docs/README.md)

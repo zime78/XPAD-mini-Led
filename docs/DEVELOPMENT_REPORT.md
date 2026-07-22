@@ -490,7 +490,7 @@ notarytool 자격정보를 설정한 뒤 notarization과 staple 검증을 추가
 | 실기기 USB | 앱 화면에서 `XPAD Mini 연결됨` 확인 |
 | LCD 프로토콜 | 앱 화면에서 `RAM 스트리밍 준비됨` 확인 |
 | 빠른 프로필 UI | `QUICK PROFILE` 제목 없이 P1~P5와 하단 세 키만 표시하고, 선택 버튼·키 값을 파란색으로 구분하는 680×320 화면 확인 |
-| 실기기 프로필 전환 | 서명 앱에서 실제 P2 readback 후 P3 선택 → `P3 / Z·X·C` 갱신 확인, 검증 후 P2로 복구 |
+| 실기기 프로필 전환 | arm64 Mac의 서명 앱에서 실제 P2 readback 후 P3 선택 → `P3 / Z·X·C` 갱신 확인, 검증 후 P2로 복구. 당시 XPAD 펌웨어 버전은 기록되지 않아 확인 불가 |
 | 프로필 키 라우팅 | 단위 테스트에서 프로필 선택 후 기존 F16 콜백이 선택 프로필의 왼쪽 동작으로 바뀌고 F16~F18 등록 횟수가 늘지 않는지 확인 |
 | 노브 매핑 | 원본 56바이트 2개 저장, Vol-/Vol+ action 11/10 확인, F20/F19 readback 후 `미세 볼륨 적용됨` 확인 |
 | 미세 볼륨 축소 | XPAD 노브 왼쪽 회전으로 실제 다음 출력 단계 적용 확인 |
@@ -549,6 +549,7 @@ renderer 공개 UI 동작은 Vitest와 Testing Library로 자동 검증한다. H
 - [XPAD Mini 직접 연결 및 제어 기능 전체 가이드](./XPAD_MINI_DIRECT_API.md)
 - [저수준 HID 프로토콜](./PROTOCOL.md)
 - [키보드 설정 기능 계획·구현 현황](./plan/keyboard-settings/PLAN.md)
+- [재생 화면 P1~P5 단축 전환 설계·구현 기록](./plan/profile-quick-switch/GUI.md)
 
 외부 자료:
 

@@ -1,12 +1,17 @@
 # XPAD Mini 키보드 설정·프로파일·백업 기능 계획
 
-- 상태: P1 고정 음악 제어, P2~P5 실제 장치 읽기·로컬 설정·백업·단축 동작과 재생 화면 P1~P5 실제 전환 구현 완료, XPAD 일반 키 HID 쓰기는 안전 게이트로 보류
+- 상태: P1 고정 음악 제어, P2~P5 실제 장치 읽기·로컬 설정·백업·F16~F18 단축 동작,
+  재생 화면 P1~P5 실제 전환과 라우터 동기화 구현 완료. XPAD 일반 키 HID 쓰기는 안전
+  게이트로 보류
 - 작성일: 2026-07-22
 - 대상: macOS용 `XPAD Mini Now Playing`
-- 구현 범위: 단계 1~4와 dev UI 검증 완료. 단계 0·5의 일반 키 HID 적용은 프로토콜 근거와 안전 경계 승인 전까지 비활성화한다.
+- 구현 범위: 단계 1~4, 재생 화면 빠른 전환, 자동 테스트와 dev UI 검증 완료. 단계 0·5의
+  일반 키 HID 적용은 프로토콜 근거와 안전 경계 승인 전까지 비활성화한다.
 - 사용자 범위: Profile 1 하단 3버튼 고정 음악 제어, Profile 2~5 하단 물리 버튼 3개 편집, macOS 앱 실행, 이름·설명을 갖는 사용자 백업 최대 10개
 - 제외 범위: 볼륨 조절, 노브 좌/우·클릭, 상단 `PF1`, 화면·원형 컨트롤과 기존 미세 볼륨 설정
-- 차단 조건: P1~P5 조회와 원복은 확인됐다. 이 3개 버튼의 `KeyInfo` 쓰기 전체 rollback과 실패 경로가 실기기에서 확인되기 전에는 HID 쓰기 구현을 시작하지 않는다.
+- 차단 조건: P1~P5 `cfg_selection` 선택·원복과 P2~P5 하단 KeyInfo 조회는 확인됐다.
+  이 3개 버튼의 `KeyInfo` 쓰기 전체 rollback과 실패 경로가 실기기에서 확인되기 전에는
+  HID 쓰기 구현을 시작하지 않는다.
 
 ![키보드 설정 GUI 시안](./keyboard-settings-gui.png)
 
@@ -30,9 +35,10 @@
 | 하단 3버튼의 XPAD HID 키맵 변경 | 보류 | P1은 쓰기 금지로 고정하고 P2~P5 실제 읽기는 완료. 일반 키 쓰기 전체 rollback 미검증으로 UI의 `장치에 적용`을 비활성화하고 이유 표시 |
 | 볼륨·노브 비간섭 | 완료 | 키보드 전용 저장 IPC는 `fineVolume*`, `knobKeymapBackup`, 노브 장치 경로를 호출하지 않음 |
 
-이하의 장치 `read/backup/apply/readback/rollback` 항목은 안전 게이트 통과 후 수행할 후속
-계획이다. 현재 구현은 로컬 편집·백업·복원·앱 실행과 F16~F18 라우팅까지만 제공하며,
-일반 키 `KeyInfo`나 Save/플래시 명령을 전송하지 않는다.
+이하의 일반 키 장치 `backup/apply/readback/rollback` 항목은 안전 게이트 통과 후 수행할
+후속 계획이다. 현재 구현은 P2~P5 `KeyInfo` 읽기와 조회 전 프로필 복원, P1~P5
+`cfg_selection` RAM 선택, 로컬 편집·백업·복원·앱 실행과 F16~F18 라우팅을 제공한다.
+일반 키 `KeyInfo` 쓰기나 Save/플래시 명령은 전송하지 않는다.
 
 ## 1. 목표 결과
 
@@ -49,7 +55,9 @@
   실제 P1~P5를 전환하거나 장치를 다시 연결하면 SystemInfo readback 프로필이 라우터의
   활성 프로필이 된다. XPAD 일반 키 적용은 안전 게이트가 열릴 때까지 비활성화한다.
 
-장치가 준비되면 UI는 모든 프로필의 현재 하단 3키를 실제로 읽어 표시한다. 연결 실패 시 로컬 Q/W/E를 실제값처럼 대체 표시하지 않고 읽기 재시도 화면을 보여준다. 임의 매크로, 셸 명령, URL, 펌웨어/플래시 저장은 범위에서 제외한다.
+장치가 준비되면 UI는 P2~P5의 현재 하단 3키를 실제로 읽어 표시하고 P1은 고정 음악
+제어값으로 표시한다. 연결 실패 시 로컬 Q/W/E를 실제값처럼 대체 표시하지 않고 읽기 재시도
+화면을 보여준다. 임의 매크로, 셸 명령, URL, 펌웨어/플래시 저장은 범위에서 제외한다.
 
 **범위 불변조건:** 이 기능이 읽거나 쓰는 물리 입력은 사용자가 표시한 하단 버튼 3개뿐이다. 기존 볼륨 기능이 사용하는 노브 좌/우 엔트리, F19/F20 단축키, 미세 볼륨 설정·상태·로그·복원 흐름은 읽기·쓰기·재등록·초기화하지 않는다.
 
@@ -98,30 +106,39 @@
 3. `키 변경` 또는 `앱 실행`을 선택한다. `키 변경`의 그룹 목록에는 미디어 키도 포함한다.
 4. 일반 키는 로컬 저장·백업하고, 미디어 키와 앱 실행은 `테스트 실행`으로 확인한다. `장치에 적용`은 안전 게이트 통과 전까지 비활성화한다.
 
-`앱 실행`인 경우에만 `앱 선택…` 버튼과 앱 이름, 아이콘, 전체 경로, `테스트 실행`을 표시한다. 선택 취소는 기존 값을 보존한다. 적용 결과는 `role="status"`, 오류와 롤백 실패는 `role="alert"`로 알린다.
+`앱 실행`인 경우에만 `앱 선택…` 버튼과 앱 이름, 아이콘, 전체 경로, `테스트 실행`을 표시한다.
+선택 취소는 기존 값을 보존한다. 테스트·저장 결과는 `role="status"`, 오류는 `role="alert"`로
+알린다. 후속 장치 적용을 구현할 경우 롤백 실패도 `role="alert"`로 알려야 한다.
 
 ### 3.4 사용자 백업 흐름
 
-키보드 설정 창 상단의 `백업 관리 n/10` 버튼으로 오른쪽 패널을 연다.
+키보드 설정 창 오른쪽의 사용자 백업 패널을 항상 표시하고 제목 옆에 현재 개수 `n / 10`을
+표시한다.
 
 1. `새 백업`에서 필수 `백업 이름`(1~40자)과 선택 `설명`(0~500자)을 입력한다.
 2. 저장 전 요약에서 `물리 버튼 3개 × Profile 2~5 = 논리 설정 12개`와 활성 프로파일을 확인한다.
 3. `백업 저장`을 누르면 최신순 목록에 추가한다.
 4. 목록에서 백업을 선택하면 이름·설명·생성 시각·Profile 2~5 요약을 확인한다.
 5. `편집 화면에 복원`을 누르면 저장 당시 설정을 편집 초안으로 정확히 불러온다.
-6. 사용자는 차이를 확인한 뒤 별도로 `장치에 적용`한다. 복원 자체는 HID 쓰기를 발생시키지 않는다.
+6. 사용자는 차이를 확인한 뒤 `로컬 설정 저장`으로 설정과 F16~F18 라우팅을 갱신한다.
+   복원 자체는 HID 쓰기를 발생시키지 않으며 `장치에 적용`은 계속 비활성화되어 있다.
 
 10개가 차면 새 백업 버튼을 비활성화하고 `10/10 · 백업을 삭제하거나 기존 백업에 덮어쓰세요`를 표시한다. 사용자는 선택 백업 덮어쓰기 또는 삭제를 할 수 있으며 두 동작 모두 대상 이름과 영향을 보여주는 확인 대화상자를 거친다.
 
-앱이 이동·삭제되어 저장 경로가 더는 존재하지 않더라도 복원 데이터는 변경하지 않는다. 해당 슬롯을 `앱을 찾을 수 없음`으로 표시하고, 앱을 다시 선택하기 전에는 그 슬롯의 장치 적용만 차단한다.
+앱이 이동·삭제되어 저장 경로가 더는 존재하지 않더라도 복원 데이터는 변경하지 않는다.
+해당 슬롯을 `앱을 찾을 수 없음`으로 표시하고 앱을 다시 선택하기 전에는 `테스트 실행`을
+차단한다. 일반 키 장치 적용은 모든 슬롯에서 별도로 비활성화되어 있다.
 
 ### 3.5 문구 원칙
 
-- `저장` 대신 `장치에 적용`을 사용해 장치 플래시에 영구 기록한다는 오해를 막는다.
+- `로컬 설정 저장`은 `config.json`과 F16~F18 라우팅에만 사용한다.
+- 비활성화된 `장치에 적용`은 일반 키 HID 쓰기가 아직 지원되지 않는 이유를 함께 표시한다.
 - `백업 저장`은 로컬 사용자 백업에만 사용한다.
 - `편집 화면에 복원`은 복원 즉시 장치가 변경되지 않음을 명확히 한다.
-- `원래 키로 복원`은 장치 원본 KeyInfo로 되돌리는 안전 동작에만 사용한다.
-- 하단 고정 안내: `장치에는 RAM으로만 임시 적용되며 앱 종료 시 원래 키로 복원됩니다.`
+- 후속 장치 적용에서 `원래 키로 복원`을 추가할 경우 장치 원본 KeyInfo로 되돌리는 안전
+  동작에만 사용한다.
+- 하단 고정 안내: `P1 고정값과 P2~P5 하단 버튼 설정만 저장합니다. 기존 볼륨·노브,
+  장치 원복용 안전 백업, Save·펌웨어·LED는 변경하지 않습니다.`
 
 ## 4. 기능 계약
 
@@ -134,9 +151,13 @@
 | Profile 2~5 수정 대상 | 프로파일별 하단 물리 버튼 3개 | Q/W/E |
 | 사용자 백업 | 최대 10 | 없음 |
 
-F16~F18은 선택된 프로파일의 하단 버튼 3개 동작을 앱 내부로 라우팅하는 후보이다. 기존 볼륨 기능의 F19/F20 등록·해제 순서와 노브 엔트리 14/15에는 관여하지 않는다. 실제 적용 전 macOS와 대상 펌웨어에서 HID usage 및 `globalShortcut.register()` 성공을 검증하고, 충돌 또는 등록 실패 시 세 버튼 키맵을 적용하지 않는다.
+F16~F18은 사용자가 기능을 활성화했을 때 선택된 실제 프로파일의 하단 버튼 3개 동작을 앱
+내부로 라우팅한다. 재생 화면의 P1~P5 전환이나 재연결 readback이 활성 프로파일을 바꾸면
+기존 등록을 늘리지 않고 라우터 대상만 갱신한다. 기존 볼륨 기능의 F19/F20 등록·해제와
+노브 엔트리 14/15에는 관여하지 않는다. `globalShortcut.register()`가 하나라도 실패하면
+F16~F18을 모두 해제하고 오류 상태를 표시하며, 일반 키 장치 쓰기는 수행하지 않는다.
 
-### 4.2 제안 공유 타입
+### 4.2 현재 공유 타입 요약
 
 ```ts
 export type ProfileId = 1 | 2 | 3 | 4 | 5;
@@ -145,7 +166,8 @@ export type KeyboardKeyCode = /* src/shared/types.ts의 고정 allowlist */ stri
 
 export type KeyboardAction =
   | { type: 'key'; keyCode: KeyboardKeyCode }
-  | { type: 'launch-app'; appName: string; appPath: string };
+  | { type: 'launch-app'; appName: string; appPath: string }
+  | { type: 'unsupported'; description: string };
 
 export interface KeyboardProfileSettings {
   id: ProfileId;
@@ -164,6 +186,7 @@ export interface KeyboardSettingsBackup {
   name: string;
   description: string;
   createdAt: string;
+  enabled: boolean;
   activeProfileId: ProfileId;
   profiles: Record<ProfileId, KeyboardProfileSettings>;
 }
@@ -175,8 +198,8 @@ export interface KeyboardSettingsBackup {
 
 | 구분 | 사용자 백업 | 장치 안전 백업 |
 |---|---|---|
-| 목적 | 사용자가 만든 키 설정 스냅샷을 다시 사용 | 실패·종료 시 실제 KeyInfo 원본 복원 |
-| 내용 | Profile 2~5 하단 버튼 12개의 논리 설정, 앱 경로, 활성 프로파일, 이름·설명. v1 호환 P1 필드는 고정값 | 새 기능이 수정한 하단 버튼의 원본 56바이트 KeyInfo만 포함 |
+| 목적 | 사용자가 만든 키 설정 스냅샷을 다시 사용 | 후속 장치 적용의 실패·종료 시 실제 KeyInfo 원본 복원 |
+| 내용 | Profile 2~5 하단 버튼 12개의 논리 설정, 앱 경로, 활성 프로파일, 이름·설명. v1 호환 P1 필드는 고정값 | 후속 장치 적용이 수정할 하단 버튼의 원본 56바이트 KeyInfo만 포함 |
 | UI | 생성·목록·덮어쓰기·삭제·복원 | 표시하거나 편집하지 않음 |
 | 한도 | 최대 10개 | 연결 장치와 허용 엔트리에 필요한 수량 |
 | 저장소 제안 | `userData/keyboard-backups.json` | 기존 노브 안전 백업과 분리한 키보드 전용 내부 복구 저장소 |
@@ -195,7 +218,10 @@ export interface KeyboardSettingsBackup {
 - 앱 이름과 절대경로
 - 백업 이름·설명은 설정으로 복원하지 않고 백업 메타데이터로 유지
 
-복원 전 현재 미적용 변경이 있으면 폐기 여부를 확인한다. 복원 후에는 모든 프로파일을 `변경됨`으로 표시하고, 장치에는 아무 패킷도 보내지 않는다. 사용자가 `장치에 적용`한 뒤 readback이 성공해야 적용 완료로 간주한다.
+복원 전 현재 미저장 변경이 있으면 폐기 여부를 확인한다. 복원 후에는 저장 상태와 달라진
+Profile 2~5를 `변경됨`으로 표시하고 장치에는 아무 패킷도 보내지 않는다. 사용자가
+`로컬 설정 저장`을 눌러야 `config.json`과 F16~F18 라우팅이 갱신된다. 일반 키 장치 적용은
+안전 게이트 통과 전까지 별도 비활성 상태다.
 
 ### 4.5 IPC 경계
 
@@ -203,14 +229,14 @@ export interface KeyboardSettingsBackup {
 |---|---|---|
 | `open-keyboard-settings-window` | renderer → main | 전용 창 생성/복원/포커스 |
 | `close-keyboard-settings-window` | renderer → main | 요청한 키보드 창만 닫기 |
+| `get-keyboard-settings` | keyboard renderer → main | P2~P5 실제 키를 읽고 조회 전 프로필을 복원한 뒤 로컬 앱 연결과 병합 |
+| `save-keyboard-settings` | keyboard renderer → main | 정규화한 로컬 설정 저장과 F16~F18 라우터 재구성 |
+| `get-keyboard-runtime-status` | keyboard renderer → main | 단축키 등록 상태와 장치 적용 차단 이유 반환 |
+| `switch-keyboard-profile` | player renderer → main | P1~P5 `cfg_selection` RAM 선택·readback·활성 라우터 동기화 |
 | `pick-application` | renderer → main | native dialog로 `.app` 1개 선택 후 이름·경로·아이콘 반환 |
-| `test-launch-application` | renderer → main | 현재 선택 앱을 사용자 요청으로 한 번 실행 |
-| `list-keyboard-backups` | renderer → main | 정규화된 사용자 백업 목록 반환 |
-| `create-keyboard-backup` | renderer → main | 10개 한도와 입력을 검증해 새 스냅샷 저장 |
-| `overwrite-keyboard-backup` | renderer → main | 확인된 ID의 스냅샷·메타데이터 교체 |
-| `delete-keyboard-backup` | renderer → main | 확인된 ID의 백업 삭제 |
-| `load-keyboard-backup` | renderer → main | 선택 백업의 깊은 복사본 반환, HID 쓰기 없음 |
-| 기존 `get-config` / `set-config` | 양방향 | 키 설정 조회·검증·적용 |
+| `test-keyboard-action` | renderer → main | 미디어 키 또는 현재 선택 앱을 사용자 요청으로 한 번 실행 |
+| `check-application-path` | renderer → main | 저장된 `.app` 절대경로의 현재 유효성 확인 |
+| `list/create/overwrite/delete/load-keyboard-backup` | renderer → main | 사용자 백업 조회·생성·덮어쓰기·삭제·편집 초안 복원 |
 
 IPC 입력은 renderer를 신뢰하지 않는다. `BrowserWindow.fromWebContents()`로 호출 창을 확인하고, ID·문자열 길이·백업 개수·앱 경로를 main에서 다시 검증한다.
 
@@ -252,19 +278,22 @@ IPC 입력은 renderer를 신뢰하지 않는다. `BrowserWindow.fromWebContents
 
 - `KeyboardSettings`, `KeyboardSettingsBackup`, v1 migration/normalize 테스트를 추가한다.
 - 최대 10개, 이름·설명 경계, 깊은 복사, 손상 파일, 정확 복원을 순수 로직 테스트로 고정한다.
-- 기존 노브 안전 백업, 새 하단 버튼 안전 백업, 사용자 백업의 저장소·API가 섞이지 않는지 검증한다.
+- 기존 노브 안전 백업과 사용자 백업의 저장소·API가 섞이지 않는지 검증한다. 후속 하단 버튼
+  장치 안전 백업은 단계 5에서 별도 저장소로 추가한다.
 - 완료 기준: 백업 생성→설정 변경→복원 시 Profile 2~5가 원본 스냅샷과 deep-equal이고 Profile 1은 고정값과 일치함.
 
 ### 단계 2 — 독립 창·5프로파일 GUI·앱 선택 (완료)
 
 - 재생 창에 키보드 아이콘을 추가하고 독립 `keyboard` 창을 생성·재사용한다.
-- `ProfileSelector`, `DeviceKeyMap`, `KeyActionEditor`, `ApplicationPicker`를 구현한다.
-- `XPAD_DISABLE_HID=1`에서도 P1 고정 표시와 P2~P5 편집·앱 선택을 검증할 수 있게 한다.
-- 완료 기준: `./build.sh dev-ui`에서 창 하나만 열림, P1 고정과 P2~P5 편집 유지, 앱 선택 상태를 확인함.
+- `KeyboardSettingsView` 안에 프로파일 탭, 하단 3키 맵, 동작 편집기와 앱 선택 UI를 구현한다.
+- `XPAD_DISABLE_HID=1`에서는 실제 장치값을 로컬 기본값으로 가장하지 않고 연결 필요 안내와
+  키보드 설정 컨트롤 잠금을 검증한다.
+- 완료 기준: `./build.sh dev-ui`에서 창 하나만 열리고, HID 비활성 상태에서 프로필
+  읽기·편집·앱 선택·저장·백업 컨트롤이 잠기는지 확인함.
 
 ### 단계 3 — 사용자 백업 관리자 (완료)
 
-- `BackupManager`, `BackupEditor`, `RestorePreview`와 백업 IPC를 구현한다.
+- `KeyboardSettingsView`의 사용자 백업 패널과 백업 IPC를 구현한다.
 - 생성·최신순 목록·덮어쓰기·삭제·복원·10개 한도·미존재 앱 상태를 구현한다.
 - 완료 기준: 10개 저장 후 11번째가 거부되고, 임의 백업 복원 시 Profile 2~5의 논리 설정 12개와 활성 프로파일이 정확히 일치하며 Profile 1은 고정값을 유지함.
 
@@ -273,6 +302,15 @@ IPC 입력은 renderer를 신뢰하지 않는다. `BrowserWindow.fromWebContents
 - 프로파일별 동작 해석, F16~F18 단축키 등록, 키 변경과 앱 실행을 분리한다.
 - 등록 충돌, 앱 삭제/이동, 실행 오류를 상태로 전파한다.
 - 완료 기준: 가짜 action executor로 다섯 프로파일의 각 동작과 오류를 검증함.
+
+### 단계 4.5 — 재생 화면 빠른 프로파일 전환 (완료)
+
+- `StatusSnapshot`에 실제 활성 프로파일, P1~P5 하단 세 키, 전환 중·오류 상태를 포함한다.
+- player 전용 `switch-keyboard-profile` IPC가 worker의 `0x02 cfg_selection` RAM 선택과
+  SystemInfo readback을 호출한다.
+- readback 성공 뒤에만 화면 선택값, `config.json`의 활성 프로파일과 F16~F18 라우터 대상을
+  함께 갱신하고, 실패하면 이전 표시를 유지한다.
+- 완료 기준: renderer·protocol·router 자동 테스트와 서명 앱 실기기 P2→P3→P2 전환 확인.
 
 ### 단계 5 — 승인된 장치 worker/프로토콜 확장 (안전 게이트로 차단)
 
@@ -285,13 +323,17 @@ IPC 입력은 renderer를 신뢰하지 않는다. `BrowserWindow.fromWebContents
 ### 단계 6 — 통합·실기기 검증과 문서화 (로컬 범위 완료, HID 범위 보류)
 
 - `./build.sh check`
-- `npm test -- --run` — 7개 파일 38개 테스트에서 P1 고정, P2~P5 고유값 로드·원래 프로필 복원, 미지원 코드 비노출, KeyInfo 해석, 연결 실패 잠금을 포함해 검증
-- `./build.sh dev-ui`의 5프로파일·백업·접근성·장치 미연결 잠금 수동 검증
+- `npm test -- --run` — 9개 파일 46개 테스트에서 P1 고정, P2~P5 고유값 로드·원래 프로필
+  복원, 빠른 P1~P5 전환·잠금·readback, 선택 프로필 F16~F18 라우팅, 미지원 코드 비노출과
+  연결 실패 잠금을 포함해 검증
+- `./build.sh dev-ui`에서 키보드 창 진입과 장치 미연결 잠금을 수동 검증하고, 5프로파일·백업
+  상호작용과 접근성은 renderer 자동 테스트 및 연결된 실기기 화면으로 검증
 - 승인 후 `./build.sh stop`과 `./build.sh debug-hid`를 이용한 실기기 검증
-- Mac 아키텍처, XPAD 펌웨어, 각 프로파일의 readback/원복 결과 기록
+- Mac 아키텍처와 각 프로파일의 readback/원복 결과 기록. 당시 XPAD 펌웨어 버전은 기록되지
+  않아 확인 불가하며 다음 실기기 검증에서 보완
 - 완료 기준: 자동 검증 통과, 사용자 백업 deep-equal 증거, 실기기 원복 증거, 프로토콜 문서 동시 갱신.
 
-## 7. 예상 변경 파일
+## 7. 변경 파일
 
 | 영역 | 파일 |
 |---|---|
@@ -300,7 +342,7 @@ IPC 입력은 renderer를 신뢰하지 않는다. `BrowserWindow.fromWebContents
 | 음악 동작 | 신규 `src/main/music/playback-controls.ts` |
 | 단축키 라우터 | 신규 `src/main/input/key-action-router.ts` |
 | 장치 프로토콜 | P1~P5 `0x02` RAM 선택·readback은 `protocol.ts`, `device-host.ts`, `device-worker.ts`에 구현. 일반 키 `0x10` 쓰기는 안전 게이트 승인 뒤 검토 |
-| renderer | `App.tsx`, `app-header.tsx`, 신규 keyboard/profile/backup 컴포넌트, `styles.css` |
+| renderer | `App.tsx`, `app-header.tsx`, `keyboard-settings-view.tsx`, `quick-profile-switch.tsx`, `keyboard-action-label.ts`, `styles.css` |
 | 테스트 | config/backup/action/protocol 인접 `*.test.ts` 또는 `*.test.tsx` |
 | 문서 | `DESIGN.md`, `docs/PROTOCOL.md`, `docs/XPAD_MINI_DIRECT_API.md`, `docs/DEVELOPMENT_REPORT.md` |
 
@@ -318,10 +360,13 @@ IPC 입력은 renderer를 신뢰하지 않는다. `BrowserWindow.fromWebContents
 - 10개 상태에서 11번째 생성은 파일을 변경하지 않고 거부되며 삭제 또는 덮어쓰기 경로가 제공된다.
 - 백업 복원 후 활성 프로파일, Profile 2~5 하단 물리 버튼의 논리 동작 12개, 앱 이름·경로가 저장 당시 값과 정확히 일치하고 Profile 1은 고정값을 유지한다.
 - 해석하지 못한 장치 동작은 오류 코드 없이 한 줄 `미지원`으로 표시한다.
-- 복원은 편집 초안만 바꾸고 사용자가 `장치에 적용`하기 전에는 HID 쓰기를 하지 않는다.
-- 이동·삭제된 앱 경로도 보존하되 오류를 표시하고 재선택 전 해당 슬롯의 적용을 차단한다.
+- 복원은 편집 초안만 바꾸고 사용자가 `로컬 설정 저장`을 누르기 전에는 저장 설정과
+  F16~F18 라우터를 바꾸지 않는다. 일반 키 HID 쓰기는 발생하지 않는다.
+- 이동·삭제된 앱 경로도 보존하되 오류를 표시하고 재선택 전 해당 슬롯의 테스트 실행을
+  차단한다. 일반 키 장치 적용은 계속 비활성화한다.
 - 어떤 실패에서도 Save/플래시 명령이 호출되지 않는다.
-- 부분 적용 실패는 원복되며 비활성화와 정상 종료 때 모든 변경 키가 원래 동작으로 복구된다.
+- **후속 단계 5:** 일반 키 장치 적용이 승인되면 부분 실패는 원복되고 비활성화와 정상 종료
+  때 변경 키만 원래 동작으로 복구되어야 한다. 현재 UI에서는 이 적용 경로가 비활성화되어 있다.
 - 볼륨 조절, 노브 좌/우·클릭, F19/F20, `fineVolume*`, 노브 안전 백업과 관련된 값·IPC·로그·장치 엔트리는 새 기능의 생성·적용·백업·복원 전후에 변하지 않는다.
 - 자동 테스트, `./build.sh check`, dev UI 검증, 승인된 실기기 검증 결과가 기록된다.
 

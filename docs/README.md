@@ -5,7 +5,7 @@
 
 ## 문서 목록
 
-- [재생 화면 P1~P5 단축 전환 GUI와 실기기 검증](./plan/profile-quick-switch/GUI.md)
+- [재생 화면 P1~P5 단축 전환 설계·구현과 실기기 검증](./plan/profile-quick-switch/GUI.md)
   - 별도 제목 없이 P1~P5 버튼과 선택 프로필 하단 세 키를 표시하는 구성
   - `0x02` RAM 프로필 선택·SystemInfo readback·F16~F18 로컬 라우터 동기화
   - 서명 앱에서 P2→P3 전환과 P2 복구를 확인한 구현 화면
@@ -18,6 +18,7 @@
 - [현재 개발 내용 및 검증 보고서](./DEVELOPMENT_REPORT.md)
   - Spotify/Apple Music 음악 정보 조회 구현
   - LCD 렌더링과 네이티브 HID 전송 구조
+  - 재생 화면 P1~P5 RAM 단축 전환과 F16~F18 로컬 라우터 동기화
   - XPAD 노브 좌/우 RAM 임시 매핑과 미세 볼륨 설정
   - 노브 조절 후 실제 출력 볼륨을 표시하는 LCD·앱 미리보기 OSD
   - macOS 권한, 개인 인증서 서명과 설치 결과
@@ -27,7 +28,7 @@
   - WebHID와 `node-hid`의 차이
   - Bibimbap에서 실제 확인한 모든 제어 범주
   - API v2 지원 명령 전체 목록과 위험도
-  - 현재 음악 표시 앱이 사용하는 범위
+  - 현재 음악 표시 앱이 사용하는 LCD·프로필·노브 RAM 전용 범위
 - [저수준 HID 프로토콜](./PROTOCOL.md)
   - HID 컬렉션과 리포트 크기
   - Sayo API v1/v2 패킷 구조
