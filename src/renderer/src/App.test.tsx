@@ -2,7 +2,13 @@
 
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AppConfig, StatusSnapshot } from '../../shared/types';
+import {
+  createDefaultKeyboardSettings,
+  type AppConfig,
+  type KeyboardRuntimeStatus,
+  type KeyboardSettingsBackup,
+  type StatusSnapshot,
+} from '../../shared/types';
 import { App } from './App';
 
 const config: AppConfig = {
@@ -12,7 +18,15 @@ const config: AppConfig = {
   showProgress: true,
   fineVolumeEnabled: true,
   fineVolumeStepsPerDetent: 1,
+  keyboardSettings: createDefaultKeyboardSettings(),
   launchAtLogin: false,
+};
+
+const keyboardRuntime: KeyboardRuntimeStatus = {
+  shortcutState: 'disabled',
+  shortcutError: null,
+  deviceApplySupported: false,
+  deviceApplyReason: '프로파일 장치 주소 지정 프로토콜 확인 필요',
 };
 
 const status: StatusSnapshot = {
@@ -46,10 +60,43 @@ describe('XPAD Mini Now Playing 화면', () => {
       refreshNowPlaying: vi.fn().mockResolvedValue(status),
       openSettingsWindow: vi.fn().mockResolvedValue(undefined),
       closeSettingsWindow: vi.fn().mockResolvedValue(undefined),
+      openKeyboardSettingsWindow: vi.fn().mockResolvedValue(undefined),
+      closeKeyboardSettingsWindow: vi.fn().mockResolvedValue(undefined),
+      getKeyboardSettings: vi.fn().mockResolvedValue(createDefaultKeyboardSettings()),
+      saveKeyboardSettings: vi.fn().mockImplementation(async (settings) => ({
+        settings,
+        runtimeStatus: keyboardRuntime,
+      })),
+      getKeyboardRuntimeStatus: vi.fn().mockResolvedValue(keyboardRuntime),
+      listKeyboardBackups: vi.fn().mockResolvedValue({
+        items: [],
+        maxItems: 10,
+        warning: null,
+      }),
+      createKeyboardBackup: vi.fn().mockResolvedValue({
+        items: [],
+        maxItems: 10,
+        warning: null,
+      }),
+      overwriteKeyboardBackup: vi.fn().mockResolvedValue({
+        items: [],
+        maxItems: 10,
+        warning: null,
+      }),
+      deleteKeyboardBackup: vi.fn().mockResolvedValue({
+        items: [],
+        maxItems: 10,
+        warning: null,
+      }),
+      loadKeyboardBackup: vi.fn().mockResolvedValue(createDefaultKeyboardSettings()),
+      pickApplication: vi.fn().mockResolvedValue(null),
+      testKeyboardAction: vi.fn().mockResolvedValue({ ok: true, error: null }),
+      checkApplicationPath: vi.fn().mockResolvedValue({ ok: true, error: null }),
       onStatusChanged: vi.fn().mockImplementation((callback: (next: StatusSnapshot) => void) => {
         emitStatus = callback;
         return () => undefined;
       }),
+      onKeyboardStatusChanged: vi.fn().mockReturnValue(() => undefined),
     };
   });
 
@@ -58,12 +105,13 @@ describe('XPAD Mini Now Playing 화면', () => {
     vi.restoreAllMocks();
   });
 
-  it('기본 화면에는 재생 정보와 설정 아이콘만 표시한다', async () => {
+  it('기본 화면에는 재생 정보와 키보드/일반 설정 아이콘만 표시한다', async () => {
     render(<App />);
 
     const playerPanel = await screen.findByRole('region', { name: "Say You Won't Let Go" });
 
     expect(within(playerPanel).getByRole('button', { name: '설정 열기' })).toBeTruthy();
+    expect(within(playerPanel).getByRole('button', { name: '키보드 설정 열기' })).toBeTruthy();
     expect(screen.queryByRole('heading', { name: 'Now Playing' })).toBeNull();
     expect(screen.queryByText('PULSAR LAB XPAD MINI')).toBeNull();
     expect(
@@ -81,6 +129,15 @@ describe('XPAD Mini Now Playing 화면', () => {
     await waitFor(() => expect(window.xpad.openSettingsWindow).toHaveBeenCalledOnce());
     expect(screen.getByRole('heading', { name: "Say You Won't Let Go" })).toBeTruthy();
     expect(screen.queryByRole('heading', { name: '설정', level: 1 })).toBeNull();
+  });
+
+  it('키보드 아이콘으로 별도 키보드 설정 창을 요청한다', async () => {
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole('button', { name: '키보드 설정 열기' }));
+
+    await waitFor(() => expect(window.xpad.openKeyboardSettingsWindow).toHaveBeenCalledOnce());
+    expect(screen.getByRole('heading', { name: "Say You Won't Let Go" })).toBeTruthy();
   });
 
   it('설정 창에서 상세 상태를 표시하고 현재 창 닫기를 요청한다', async () => {
@@ -155,5 +212,238 @@ describe('XPAD Mini Now Playing 화면', () => {
       });
     });
     expect((await screen.findByRole('status')).textContent).toBe('설정을 저장했습니다.');
+  });
+
+  it('장치 연결 또는 프로토콜 준비 실패 시 일반 설정 변경과 저장을 차단한다', async () => {
+    window.history.replaceState({}, '', '/?view=settings');
+    window.xpad.getStatus = vi.fn().mockResolvedValue({
+      ...status,
+      deviceConnected: false,
+      protocolReady: false,
+    });
+    render(<App />);
+
+    expect((await screen.findByRole('alert')).textContent).toContain(
+      'XPAD Mini 연결과 LCD 프로토콜 준비 후 설정을 변경할 수 있습니다.'
+    );
+    const artwork = screen.getByRole('checkbox', { name: '앨범아트 표시' });
+    const service = screen.getByRole('combobox', { name: '우선 음악 앱' });
+    expect((artwork as HTMLInputElement).disabled).toBe(true);
+    expect((service as HTMLSelectElement).disabled).toBe(true);
+    expect(screen.getByRole('button', { name: '설정 저장' }).hasAttribute('disabled')).toBe(true);
+
+    fireEvent.click(artwork);
+    fireEvent.click(screen.getByRole('button', { name: '설정 저장' }));
+    expect(window.xpad.setConfig).not.toHaveBeenCalled();
+  });
+
+  it('키보드 창에는 5개 프로파일과 하단 물리 버튼 3개만 표시한다', async () => {
+    window.history.replaceState({}, '', '/?view=keyboard');
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: '키보드 설정', level: 1 })).toBeTruthy();
+    expect(screen.getAllByRole('tab')).toHaveLength(5);
+    const keyMap = screen.getByLabelText('Profile 1 하단 버튼');
+    expect(within(keyMap).getAllByRole('button')).toHaveLength(3);
+    expect(screen.queryByRole('heading', { name: 'XPAD 노브 설정' })).toBeNull();
+    expect(screen.getByText('Profile 1 고정')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '키 변경' })).toBeNull();
+    expect(
+      within(keyMap).getByRole('button', { name: '왼쪽 버튼, 현재 동작 이전 곡' })
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole('tab', { name: 'P2 · Profile 2' }));
+    expect(screen.getByRole('button', { name: '키 변경' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '음악 제어' })).toBeNull();
+    expect(screen.getByRole('option', { name: '재생/일시정지' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: 'Q' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '장치에 적용' }).hasAttribute('disabled')).toBe(true);
+    expect(document.title).toBe('XPAD Mini 키보드 설정');
+  });
+
+  it('Profile 1~5 클릭 시 각 프로필에 저장된 설정만 정확히 로드한다', async () => {
+    window.history.replaceState({}, '', '/?view=keyboard');
+    const profileSettings = createDefaultKeyboardSettings();
+    const expected = [
+      { profileId: 1, keyCode: 'KeyA', label: '이전 곡' },
+      { profileId: 2, keyCode: 'KeyB', label: 'B' },
+      { profileId: 3, keyCode: 'KeyC', label: 'C' },
+      { profileId: 4, keyCode: 'KeyD', label: 'D' },
+      { profileId: 5, keyCode: 'KeyE', label: 'E' },
+    ] as const;
+    for (const item of expected) {
+      profileSettings.profiles[item.profileId].assignments.left = {
+        type: 'key',
+        keyCode: item.keyCode,
+      };
+    }
+    window.xpad.getKeyboardSettings = vi.fn().mockResolvedValue(profileSettings);
+    render(<App />);
+
+    await screen.findByRole('heading', { name: '키보드 설정', level: 1 });
+    for (const item of expected) {
+      const tab = screen.getByRole('tab', {
+        name: new RegExp(`P${item.profileId} · Profile ${item.profileId}`),
+      });
+      fireEvent.click(tab);
+      expect(tab.getAttribute('aria-selected')).toBe('true');
+      expect(
+        within(screen.getByLabelText(`Profile ${item.profileId} 하단 버튼`)).getByRole(
+          'button',
+          { name: new RegExp(`왼쪽 버튼, 현재 동작 ${item.label}$`) }
+        )
+      ).toBeTruthy();
+      expect(
+        (screen.getByRole('combobox', {
+          name: 'F16~F18 사용 프로파일',
+        }) as HTMLSelectElement).value
+      ).toBe('1');
+      expect(screen.getByRole('button', { name: '로컬 설정 저장' }).hasAttribute('disabled'))
+        .toBe(true);
+    }
+  });
+
+  it('장치 연결 또는 프로토콜 준비 실패 시 키보드 프로필 선택과 편집을 차단한다', async () => {
+    window.history.replaceState({}, '', '/?view=keyboard');
+    window.xpad.getStatus = vi.fn().mockResolvedValue({
+      ...status,
+      deviceConnected: true,
+      protocolReady: false,
+    });
+    render(<App />);
+
+    expect((await screen.findByRole('alert')).textContent).toContain(
+      'XPAD Mini 연결과 LCD 프로토콜 준비 후 프로필을 불러오고 키보드 설정을 변경할 수 있습니다.'
+    );
+    expect(screen.queryAllByRole('tab')).toHaveLength(0);
+    expect(screen.getByRole('button', { name: '장치에서 다시 읽기' }).matches(':disabled'))
+      .toBe(true);
+    expect(window.xpad.getKeyboardSettings).not.toHaveBeenCalled();
+    expect(window.xpad.saveKeyboardSettings).not.toHaveBeenCalled();
+  });
+
+  it('프로필 탭에서 저장된 설정을 표시하되 F16~F18 사용 프로필은 바꾸지 않는다', async () => {
+    window.history.replaceState({}, '', '/?view=keyboard');
+    const initialSettings = createDefaultKeyboardSettings();
+    initialSettings.profiles[3].assignments.left = {
+      type: 'key',
+      keyCode: 'MediaPlayPause',
+    };
+    window.xpad.getKeyboardSettings = vi.fn().mockResolvedValue(initialSettings);
+    window.xpad.pickApplication = vi.fn().mockResolvedValue({
+      appName: 'Finder',
+      appPath: '/System/Library/CoreServices/Finder.app',
+      iconDataUrl: 'data:image/png;base64,AA==',
+    });
+    render(<App />);
+
+    await screen.findByRole('heading', { name: '키보드 설정', level: 1 });
+    fireEvent.click(screen.getByRole('tab', { name: 'P3 · Profile 3' }));
+    expect(
+      within(screen.getByLabelText('Profile 3 하단 버튼')).getByRole('button', {
+        name: /왼쪽 버튼, 현재 동작 재생\/일시정지/,
+      })
+    ).toBeTruthy();
+    expect(screen.getByRole('button', { name: '로컬 설정 저장' }).hasAttribute('disabled'))
+      .toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: /오른쪽 버튼/ }));
+    fireEvent.click(screen.getByRole('button', { name: '앱 실행' }));
+    await screen.findByText('Finder');
+    expect(screen.getByRole('tab', { name: /P3 · Profile 3.*변경됨/ })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '로컬 설정 저장' }));
+
+    await waitFor(() => expect(window.xpad.saveKeyboardSettings).toHaveBeenCalledOnce());
+    const savedKeyboardSettings = vi.mocked(window.xpad.saveKeyboardSettings).mock.calls[0][0];
+    expect(savedKeyboardSettings.activeProfileId).toBe(1);
+    expect(savedKeyboardSettings.profiles[3].assignments.right).toEqual({
+      type: 'launch-app',
+      appName: 'Finder',
+      appPath: '/System/Library/CoreServices/Finder.app',
+    });
+    expect(savedKeyboardSettings).not.toHaveProperty('fineVolumeEnabled');
+    expect(window.xpad.setConfig).not.toHaveBeenCalled();
+  });
+
+  it('이름과 설명을 입력해 Profile 2~5 백업을 요청한다', async () => {
+    window.history.replaceState({}, '', '/?view=keyboard');
+    render(<App />);
+
+    await screen.findByRole('heading', { name: '키보드 설정', level: 1 });
+    fireEvent.change(screen.getByPlaceholderText('예: 작업용 키 세팅'), {
+      target: { value: '작업용' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('백업 내용을 입력하세요.'), {
+      target: { value: '앱 실행 설정 포함' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '백업 저장' }));
+
+    await waitFor(() => expect(window.xpad.createKeyboardBackup).toHaveBeenCalledOnce());
+    expect(window.xpad.createKeyboardBackup).toHaveBeenCalledWith({
+      name: '작업용',
+      description: '앱 실행 설정 포함',
+      settings: createDefaultKeyboardSettings(),
+    });
+  });
+
+  it('미지원 장치 동작은 오류 코드 없이 한 줄 미지원으로 표시한다', async () => {
+    window.history.replaceState({}, '', '/?view=keyboard');
+    const profileSettings = createDefaultKeyboardSettings();
+    profileSettings.profiles[2].assignments.left = {
+      type: 'unsupported',
+      description: '미지원 장치 동작 (output=63, action=f0000000)',
+    };
+    window.xpad.getKeyboardSettings = vi.fn().mockResolvedValue(profileSettings);
+    render(<App />);
+
+    await screen.findByRole('heading', { name: '키보드 설정', level: 1 });
+    fireEvent.click(screen.getByRole('tab', { name: 'P2 · Profile 2' }));
+
+    const keyMap = screen.getByLabelText('Profile 2 하단 버튼');
+    expect(
+      within(keyMap).getByRole('button', { name: '왼쪽 버튼, 현재 동작 미지원' })
+    ).toBeTruthy();
+    expect(screen.getAllByText('미지원').length).toBeGreaterThan(0);
+    expect(screen.queryByText(/output=63|action=f0000000/)).toBeNull();
+  });
+
+  it('백업의 활성 프로파일과 버튼 설정을 편집 화면에 그대로 복원한다', async () => {
+    window.history.replaceState({}, '', '/?view=keyboard');
+    const restored = createDefaultKeyboardSettings();
+    restored.enabled = true;
+    restored.activeProfileId = 5;
+    restored.profiles[5].assignments.left = {
+      type: 'launch-app',
+      appName: 'Finder',
+      appPath: '/System/Library/CoreServices/Finder.app',
+    };
+    const backup: KeyboardSettingsBackup = {
+      schemaVersion: 1,
+      id: 'backup-1',
+      name: '복원 테스트',
+      description: '5개 프로파일',
+      createdAt: '2026-07-22T00:00:00.000Z',
+      enabled: restored.enabled,
+      activeProfileId: restored.activeProfileId,
+      profiles: restored.profiles,
+    };
+    window.xpad.listKeyboardBackups = vi.fn().mockResolvedValue({
+      items: [backup],
+      maxItems: 10,
+      warning: null,
+    });
+    window.xpad.loadKeyboardBackup = vi.fn().mockResolvedValue(restored);
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /복원 테스트/ }));
+    fireEvent.click(screen.getByRole('button', { name: '편집 화면에 복원' }));
+
+    await waitFor(() => expect(window.xpad.loadKeyboardBackup).toHaveBeenCalledWith('backup-1'));
+    expect(screen.getByRole('tab', { name: /P5 · Profile 5/ }).getAttribute('aria-selected'))
+      .toBe('true');
+    expect(
+      within(screen.getByLabelText('Profile 5 하단 버튼')).getByRole('button', {
+        name: /왼쪽 버튼, 현재 동작 Finder 실행/,
+      })
+    ).toBeTruthy();
+    expect(window.xpad.saveKeyboardSettings).not.toHaveBeenCalled();
   });
 });

@@ -1,9 +1,28 @@
-import { app, BrowserWindow, ipcMain, Menu, nativeImage, Tray } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  Menu,
+  nativeImage,
+  shell,
+  Tray,
+} from 'electron';
+import fs from 'node:fs';
 import path from 'node:path';
 import {
+  ApplicationSelection,
   AppConfig,
   EMPTY_TRACK,
+  KeyboardAction,
+  KeyboardActionResult,
+  KeyboardBackupInput,
+  KeyboardRuntimeStatus,
+  KeyboardSettings,
+  KeyboardSettingsSaveResult,
   KnobKeymapBackup,
+  MEDIA_KEY_CODES,
+  MediaKeyCode,
   StatusSnapshot,
   TrackInfo,
 } from '../shared/types';
@@ -11,17 +30,29 @@ import { loadConfig, saveConfig } from './config';
 import { DiagnosticLog } from './diagnostic-log';
 import { DeviceHost } from './device/device-host';
 import { renderTrackFrame } from './display/frame-renderer';
+import { KeyboardBackupStore } from './keyboard-backups';
+import {
+  isLaunchableAppPath,
+  mergeKeyboardDeviceSnapshot,
+  normalizeKeyboardSettings,
+  parseKeyboardAction,
+} from './keyboard-settings';
 import { FineVolumeController } from './input/fine-volume';
+import { KeyActionRouter } from './input/key-action-router';
 import { NowPlayingMonitor } from './music/now-playing';
+import { controlPlayback } from './music/playback-controls';
 
 let tray: Tray | null = null;
 let playerWindow: BrowserWindow | null = null;
 let settingsWindow: BrowserWindow | null = null;
+let keyboardWindow: BrowserWindow | null = null;
 let config: AppConfig;
 let deviceHost: DeviceHost;
 let fineVolumeController: FineVolumeController;
 let diagnosticLog: DiagnosticLog;
 let monitor: NowPlayingMonitor;
+let keyboardBackupStore: KeyboardBackupStore;
+let keyActionRouter: KeyActionRouter;
 let currentTrack: TrackInfo = structuredClone(EMPTY_TRACK);
 let previewDataUrl: string | null = null;
 let renderSequence = 0;
@@ -59,11 +90,29 @@ function currentStatus(): StatusSnapshot {
   };
 }
 
+function deviceSettingsReady(): boolean {
+  return Boolean(deviceHost?.connected && deviceHost.protocolReady);
+}
+
+function requireDeviceSettingsReady(): void {
+  if (!deviceSettingsReady()) {
+    throw new Error('XPAD Mini 연결과 LCD 프로토콜 준비 후 설정을 변경할 수 있습니다.');
+  }
+}
+
 function broadcastStatus(): void {
   const status = currentStatus();
   updateTray(status);
   playerWindow?.webContents.send('status-changed', status);
   settingsWindow?.webContents.send('status-changed', status);
+  keyboardWindow?.webContents.send('status-changed', status);
+}
+
+function broadcastKeyboardStatus(): void {
+  keyboardWindow?.webContents.send(
+    'keyboard-status-changed',
+    keyActionRouter.status
+  );
 }
 
 function updateTray(status: StatusSnapshot): void {
@@ -85,6 +134,7 @@ function updateTray(status: StatusSnapshot): void {
       },
       { type: 'separator' },
       { label: '지금 새로고침', click: () => void monitor.refresh() },
+      { label: '키보드 설정…', click: () => openKeyboardSettingsWindow() },
       { label: '설정…', click: () => openSettingsWindow() },
       { type: 'separator' },
       { label: '종료', click: () => app.quit() },
@@ -92,7 +142,10 @@ function updateTray(status: StatusSnapshot): void {
   );
 }
 
-function loadAppWindow(targetWindow: BrowserWindow, view: 'player' | 'settings'): void {
+function loadAppWindow(
+  targetWindow: BrowserWindow,
+  view: 'player' | 'settings' | 'keyboard'
+): void {
   if (process.env.ELECTRON_RENDERER_URL) {
     const rendererUrl = new URL(process.env.ELECTRON_RENDERER_URL);
     rendererUrl.searchParams.set('view', view);
@@ -155,6 +208,25 @@ function openSettingsWindow(): void {
   loadAppWindow(settingsWindow, 'settings');
 }
 
+function openKeyboardSettingsWindow(): void {
+  if (keyboardWindow) {
+    keyboardWindow.show();
+    keyboardWindow.focus();
+    return;
+  }
+  keyboardWindow = new BrowserWindow({
+    width: 1080,
+    height: 760,
+    minWidth: 900,
+    minHeight: 680,
+    title: 'XPAD Mini 키보드 설정',
+    autoHideMenuBar: true,
+    webPreferences: windowWebPreferences(),
+  });
+  keyboardWindow.on('closed', () => (keyboardWindow = null));
+  loadAppWindow(keyboardWindow, 'keyboard');
+}
+
 function renderAndSend(track: TrackInfo): void {
   const sequence = ++renderSequence;
   pendingRender = {
@@ -197,7 +269,11 @@ function configureLoginItem(): void {
 
 function applyConfig(next: AppConfig): AppConfig {
   const knobKeymapBackup = next.knobKeymapBackup ?? config.knobKeymapBackup;
-  config = saveConfig({ ...next, knobKeymapBackup });
+  config = saveConfig({
+    ...next,
+    knobKeymapBackup,
+    keyboardSettings: config.keyboardSettings,
+  });
   monitor.configure(config.servicePreference, config.pollIntervalMs);
   const shortcutsReady =
     !hidDisabled &&
@@ -222,15 +298,173 @@ function storeKnobKeymapBackup(backup: KnobKeymapBackup): void {
   config = saveConfig({ ...config, knobKeymapBackup: backup });
 }
 
+function saveKeyboardSettings(next: KeyboardSettings): KeyboardSettingsSaveResult {
+  requireDeviceSettingsReady();
+  const settings = normalizeKeyboardSettings(next);
+  config = saveConfig({ ...config, keyboardSettings: settings });
+  const runtimeStatus = keyActionRouter.configure(settings);
+  return { settings: structuredClone(settings), runtimeStatus };
+}
+
+async function executeKeyboardAction(action: KeyboardAction): Promise<void> {
+  if (action.type === 'key') {
+    if (!MEDIA_KEY_CODES.includes(action.keyCode as MediaKeyCode)) {
+      throw new Error(
+        '일반 키는 로컬 설정과 백업만 지원합니다. 안전한 장치 적용이 지원된 뒤 실행할 수 있습니다.'
+      );
+    }
+    await controlPlayback(
+      action.keyCode as MediaKeyCode,
+      currentTrack.service,
+      config.servicePreference
+    );
+    await monitor.refresh();
+    return;
+  }
+  if (action.type === 'unsupported') {
+    throw new Error('미지원');
+  }
+  validateApplicationPath(action.appPath);
+  const error = await shell.openPath(action.appPath);
+  if (error) throw new Error(error);
+}
+
+async function testKeyboardAction(value: unknown): Promise<KeyboardActionResult> {
+  const action = parseKeyboardAction(value);
+  if (!action) return { ok: false, error: '지원하지 않는 키 동작입니다.' };
+  try {
+    await executeKeyboardAction(action);
+    return { ok: true, error: null };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+async function pickApplication(): Promise<ApplicationSelection | null> {
+  const owner = keyboardWindow;
+  if (!owner) throw new Error('키보드 설정 창을 찾지 못했습니다.');
+  const result = await dialog.showOpenDialog(owner, {
+    title: '키에서 실행할 macOS 애플리케이션 선택',
+    properties: ['openFile'],
+    filters: [{ name: 'macOS 애플리케이션', extensions: ['app'] }],
+  });
+  if (result.canceled || result.filePaths.length !== 1) return null;
+  const appPath = result.filePaths[0];
+  validateApplicationPath(appPath);
+  const icon = await app.getFileIcon(appPath, { size: 'normal' });
+  return {
+    appName: path.basename(appPath, path.extname(appPath)),
+    appPath,
+    iconDataUrl: icon.toDataURL(),
+  };
+}
+
+function validateApplicationPath(appPath: string): void {
+  if (!isLaunchableAppPath(appPath)) {
+    throw new Error('macOS .app 절대경로만 사용할 수 있습니다.');
+  }
+  try {
+    if (!fs.statSync(appPath).isDirectory()) {
+      throw new Error('선택한 경로가 애플리케이션 번들이 아닙니다.');
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('애플리케이션 번들')) {
+      throw error;
+    }
+    throw new Error('선택한 애플리케이션을 찾을 수 없습니다.');
+  }
+}
+
+function requireKeyboardWindow(event: Electron.IpcMainInvokeEvent): void {
+  const requester = BrowserWindow.fromWebContents(event.sender);
+  if (!keyboardWindow || requester !== keyboardWindow) {
+    throw new Error('키보드 설정 창에서만 사용할 수 있는 요청입니다.');
+  }
+}
+
 function registerIpc(): void {
   ipcMain.handle('get-status', () => currentStatus());
   ipcMain.handle('get-config', () => config);
-  ipcMain.handle('set-config', (_event, next: AppConfig) => applyConfig(next));
+  ipcMain.handle('set-config', (_event, next: AppConfig) => {
+    requireDeviceSettingsReady();
+    return applyConfig(next);
+  });
   ipcMain.handle('open-settings-window', () => openSettingsWindow());
   ipcMain.handle('close-settings-window', (event) => {
     const requester = BrowserWindow.fromWebContents(event.sender);
     const target = settingsWindow;
     if (requester === target) target?.close();
+  });
+  ipcMain.handle('open-keyboard-settings-window', () => openKeyboardSettingsWindow());
+  ipcMain.handle('close-keyboard-settings-window', (event) => {
+    const requester = BrowserWindow.fromWebContents(event.sender);
+    const target = keyboardWindow;
+    if (requester === target) target?.close();
+  });
+  ipcMain.handle('get-keyboard-settings', async (event) => {
+    requireKeyboardWindow(event);
+    requireDeviceSettingsReady();
+    const snapshot = await deviceHost.readKeyboardProfiles();
+    return mergeKeyboardDeviceSnapshot(config.keyboardSettings, snapshot);
+  });
+  ipcMain.handle('save-keyboard-settings', (event, next: KeyboardSettings) => {
+    requireKeyboardWindow(event);
+    return saveKeyboardSettings(next);
+  });
+  ipcMain.handle('get-keyboard-runtime-status', (event): KeyboardRuntimeStatus => {
+    requireKeyboardWindow(event);
+    return keyActionRouter.status;
+  });
+  ipcMain.handle('list-keyboard-backups', (event) => {
+    requireKeyboardWindow(event);
+    return keyboardBackupStore.list();
+  });
+  ipcMain.handle('create-keyboard-backup', (event, input: KeyboardBackupInput) => {
+    requireKeyboardWindow(event);
+    requireDeviceSettingsReady();
+    return keyboardBackupStore.create(input);
+  });
+  ipcMain.handle(
+    'overwrite-keyboard-backup',
+    (event, id: string, input: KeyboardBackupInput) => {
+      requireKeyboardWindow(event);
+      requireDeviceSettingsReady();
+      return keyboardBackupStore.overwrite(id, input);
+    }
+  );
+  ipcMain.handle('delete-keyboard-backup', (event, id: string) => {
+    requireKeyboardWindow(event);
+    requireDeviceSettingsReady();
+    return keyboardBackupStore.delete(id);
+  });
+  ipcMain.handle('load-keyboard-backup', (event, id: string) => {
+    requireKeyboardWindow(event);
+    return keyboardBackupStore.load(id);
+  });
+  ipcMain.handle('pick-application', async (event) => {
+    requireKeyboardWindow(event);
+    requireDeviceSettingsReady();
+    return pickApplication();
+  });
+  ipcMain.handle('test-keyboard-action', (event, action: unknown) => {
+    requireKeyboardWindow(event);
+    requireDeviceSettingsReady();
+    return testKeyboardAction(action);
+  });
+  ipcMain.handle('check-application-path', (event, appPath: string): KeyboardActionResult => {
+    requireKeyboardWindow(event);
+    try {
+      validateApplicationPath(appPath);
+      return { ok: true, error: null };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
   });
   ipcMain.handle('refresh-now-playing', async () => {
     await monitor.refresh();
@@ -254,6 +488,8 @@ if (!gotLock) {
       hidDisabled,
     });
     deviceHost = new DeviceHost();
+    keyboardBackupStore = new KeyboardBackupStore(app.getPath('userData'));
+    keyActionRouter = new KeyActionRouter(executeKeyboardAction);
     fineVolumeController = new FineVolumeController(diagnosticLog);
     monitor = new NowPlayingMonitor(
       config.servicePreference,
@@ -271,6 +507,7 @@ if (!gotLock) {
     });
     deviceHost.on('knob-backup', storeKnobKeymapBackup);
     fineVolumeController.on('status', broadcastStatus);
+    keyActionRouter.on('status', broadcastKeyboardStatus);
     monitor.on('change', (track: TrackInfo) => {
       currentTrack = track;
       renderAndSend(track);
@@ -278,6 +515,7 @@ if (!gotLock) {
     monitor.on('status', broadcastStatus);
 
     registerIpc();
+    keyActionRouter.configure(config.keyboardSettings);
     const shortcutsReady =
       !hidDisabled &&
       fineVolumeController.configure(
@@ -311,6 +549,7 @@ if (!gotLock) {
     const finish = () => {
       if (finished) return;
       finished = true;
+      keyActionRouter?.dispose();
       fineVolumeController?.dispose();
       diagnosticLog?.log('app-stopped');
       void (diagnosticLog?.flush() ?? Promise.resolve()).finally(() => app.exit(0));

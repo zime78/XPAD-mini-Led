@@ -3,17 +3,23 @@ import type { ConfigPatch } from './settings-types';
 
 type KnobSettingsSectionProps = {
   config: AppConfig;
+  disabled: boolean;
   onPatch: ConfigPatch;
 };
 
-export function KnobSettingsSection({ config, onPatch }: KnobSettingsSectionProps) {
+export function KnobSettingsSection({
+  config,
+  disabled,
+  onPatch,
+}: KnobSettingsSectionProps) {
   return (
-    <section className="settings-section">
+    <section className={`settings-section${disabled ? ' is-disabled' : ''}`}>
       <h2>XPAD 노브 설정</h2>
       <label className="toggle">
         <input
           type="checkbox"
           checked={config.fineVolumeEnabled}
+          disabled={disabled}
           onChange={(event) =>
             onPatch((draft) => {
               draft.fineVolumeEnabled = event.target.checked;
@@ -26,7 +32,7 @@ export function KnobSettingsSection({ config, onPatch }: KnobSettingsSectionProp
         한 칸당 실제 단계
         <select
           value={config.fineVolumeStepsPerDetent}
-          disabled={!config.fineVolumeEnabled}
+          disabled={disabled || !config.fineVolumeEnabled}
           onChange={(event) =>
             onPatch((draft) => {
               draft.fineVolumeStepsPerDetent = Number(event.target.value);

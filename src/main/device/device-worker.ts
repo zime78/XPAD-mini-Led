@@ -1,5 +1,6 @@
 import { parentPort, workerData } from 'node:worker_threads';
 import type {
+  KeyboardDeviceSnapshot,
   KnobFineVolumeState,
   KnobKeymapBackup,
 } from '../../shared/types';
@@ -13,16 +14,24 @@ export type WorkerInMessage =
       enabled: boolean;
       backup?: KnobKeymapBackup;
     }
+  | { type: 'readKeyboardProfiles'; requestId: number }
   | { type: 'shutdown' };
 
-export interface WorkerOutMessage {
-  type: 'status';
-  connected: boolean;
-  protocolReady: boolean;
-  knobFineVolumeState: KnobFineVolumeState;
-  knobFineVolumeError: string | null;
-  knobKeymapBackup?: KnobKeymapBackup;
-}
+export type WorkerOutMessage =
+  | {
+      type: 'status';
+      connected: boolean;
+      protocolReady: boolean;
+      knobFineVolumeState: KnobFineVolumeState;
+      knobFineVolumeError: string | null;
+      knobKeymapBackup?: KnobKeymapBackup;
+    }
+  | {
+      type: 'keyboardProfiles';
+      requestId: number;
+      snapshot?: KeyboardDeviceSnapshot;
+      error?: string;
+    };
 
 const port = parentPort;
 if (!port) throw new Error('device-worker must run in a worker thread');
@@ -120,6 +129,31 @@ function queueKnobConfiguration(): void {
     });
 }
 
+function queueKeyboardProfileRead(requestId: number): void {
+  knobQueue = knobQueue
+    .catch(() => {})
+    .then(async () => {
+      pauseStreaming();
+      try {
+        if (!protocol.ready) throw new Error('XPAD 프로토콜이 준비되지 않았습니다.');
+        const snapshot = await protocol.readKeyboardProfiles();
+        port!.postMessage({
+          type: 'keyboardProfiles',
+          requestId,
+          snapshot,
+        } satisfies WorkerOutMessage);
+      } catch (error) {
+        port!.postMessage({
+          type: 'keyboardProfiles',
+          requestId,
+          error: error instanceof Error ? error.message : String(error),
+        } satisfies WorkerOutMessage);
+      } finally {
+        resumeStreaming();
+      }
+    });
+}
+
 port.on('message', (message: WorkerInMessage) => {
   if (message.type === 'setFrame') {
     currentFrame = Buffer.from(message.frame);
@@ -128,6 +162,8 @@ port.on('message', (message: WorkerInMessage) => {
     knobEnabled = message.enabled;
     knobBackup = message.backup ?? knobBackup;
     queueKnobConfiguration();
+  } else if (message.type === 'readKeyboardProfiles') {
+    queueKeyboardProfileRead(message.requestId);
   } else if (message.type === 'shutdown') {
     void shutdown();
   }

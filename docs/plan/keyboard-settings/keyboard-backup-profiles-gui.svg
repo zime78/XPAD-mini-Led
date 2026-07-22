@@ -1,0 +1,172 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="960" viewBox="0 0 1440 960" role="img" aria-labelledby="title desc">
+  <title id="title">XPAD Mini 고정 Profile 1과 Profile 2~5 사용자 백업 GUI 시안</title>
+  <desc id="desc">XPAD Mini 하단 물리 버튼 3개만 Profile 1부터 Profile 5까지 설정하고 최대 10개의 사용자 백업을 저장하거나 복원하는 키보드 설정 창</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#152235"/>
+      <stop offset=".48" stop-color="#080c12"/>
+      <stop offset="1" stop-color="#05070b"/>
+    </linearGradient>
+    <linearGradient id="card" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#111b28"/>
+      <stop offset="1" stop-color="#0b121b"/>
+    </linearGradient>
+    <linearGradient id="blue" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#3b82f6"/>
+      <stop offset="1" stop-color="#2563eb"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="18" stdDeviation="26" flood-color="#000" flood-opacity=".42"/>
+    </filter>
+    <style>
+      text { font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif; }
+      .title { fill: #f8fafc; font-size: 28px; font-weight: 760; letter-spacing: -.5px; }
+      .heading { fill: #f8fafc; font-size: 20px; font-weight: 720; }
+      .subheading { fill: #e2e8f0; font-size: 15px; font-weight: 700; }
+      .label { fill: #cbd5e1; font-size: 13px; font-weight: 650; }
+      .body { fill: #94a3b8; font-size: 12px; }
+      .micro { fill: #64748b; font-size: 10px; }
+      .button { fill: #f8fafc; font-size: 12px; font-weight: 700; }
+      .blueText { fill: #bfdbfe; font-size: 12px; font-weight: 700; }
+      .input { fill: #0a111a; stroke: #334155; }
+    </style>
+  </defs>
+
+  <rect width="1440" height="960" fill="url(#bg)"/>
+  <circle cx="1310" cy="80" r="230" fill="#2563eb" opacity=".07"/>
+  <circle cx="80" cy="910" r="240" fill="#22c55e" opacity=".035"/>
+
+  <text x="58" y="55" class="title">Profile 1 고정과 Profile 2~5 사용자 백업</text>
+  <text x="58" y="80" class="body">Profile 1은 음악 제어로 고정하고, Profile 2~5 설정을 한 번에 백업·복원합니다.</text>
+  <rect x="1154" y="38" width="228" height="38" rx="19" fill="#0f2c20" stroke="#24563a"/>
+  <circle cx="1177" cy="57" r="5" fill="#4ade80"/>
+  <text x="1191" y="62" fill="#86efac" font-size="12" font-weight="650">로컬 백업 · 장치 쓰기 없음</text>
+
+  <g filter="url(#shadow)">
+    <rect x="58" y="108" width="1324" height="790" rx="24" fill="#091019" stroke="#263244"/>
+  </g>
+
+  <rect x="58" y="108" width="1324" height="76" rx="24" fill="#0f1722"/>
+  <path d="M58 158h1324v26H58z" fill="#0f1722"/>
+  <text x="88" y="140" class="heading">키보드 설정</text>
+  <text x="88" y="163" class="body">프로파일 5개 · 수정 대상은 하단 물리 버튼 3개만 · 볼륨·노브 변경 없음</text>
+  <rect x="1018" y="128" width="172" height="38" rx="11" fill="#152235" stroke="#60a5fa"/>
+  <path d="M1040 139v15m-7-8h14" stroke="#bfdbfe" stroke-width="2" stroke-linecap="round"/>
+  <text x="1056" y="152" class="blueText">백업 관리</text>
+  <rect x="1150" y="137" width="28" height="20" rx="10" fill="#2563eb"/>
+  <text x="1156" y="151" fill="#fff" font-size="10" font-weight="750">3/10</text>
+  <rect x="1210" y="128" width="126" height="38" rx="19" fill="#0f2c20" stroke="#24563a"/>
+  <circle cx="1231" cy="147" r="5" fill="#4ade80"/>
+  <text x="1244" y="152" fill="#86efac" font-size="11" font-weight="650">연결됨</text>
+  <rect x="1346" y="126" width="20" height="42" rx="8" fill="#111827"/>
+
+  <rect x="82" y="206" width="812" height="64" rx="16" fill="#0d1520" stroke="#263244"/>
+  <text x="104" y="230" class="micro">편집할 프로파일</text>
+  <g transform="translate(104 239)">
+    <rect x="0" y="0" width="120" height="40" rx="10" fill="url(#blue)" stroke="#93c5fd"/>
+    <text x="18" y="25" class="button">P1 · Profile 1</text>
+    <circle cx="107" cy="8" r="4" fill="#fbbf24"/>
+    <rect x="130" y="0" width="120" height="40" rx="10" fill="#111827" stroke="#334155"/>
+    <text x="148" y="25" class="label">P2 · Profile 2</text>
+    <rect x="260" y="0" width="120" height="40" rx="10" fill="#111827" stroke="#334155"/>
+    <text x="278" y="25" class="label">P3 · Profile 3</text>
+    <circle cx="367" cy="8" r="4" fill="#fbbf24"/>
+    <rect x="390" y="0" width="120" height="40" rx="10" fill="#111827" stroke="#334155"/>
+    <text x="408" y="25" class="label">P4 · Profile 4</text>
+    <rect x="520" y="0" width="120" height="40" rx="10" fill="#111827" stroke="#334155"/>
+    <text x="538" y="25" class="label">P5 · Profile 5</text>
+  </g>
+
+  <rect x="82" y="294" width="498" height="442" rx="20" fill="url(#card)" stroke="#263244"/>
+  <text x="108" y="327" class="subheading">Profile 1 · 하단 버튼 3개만</text>
+  <text x="108" y="348" class="body">노브·PF1·화면·원형 컨트롤은 편집 대상이 아닙니다.</text>
+  <g transform="translate(128 378)">
+    <path d="M31 0h335c18 0 32 14 32 32v224c0 20-16 36-36 36H36c-20 0-36-16-36-36V34C0 15 15 0 31 0Z" fill="#101a27" stroke="#6b819d" stroke-width="2"/>
+    <rect x="16" y="24" width="366" height="52" rx="12" fill="#0f2c20" stroke="#24563a"/>
+    <circle cx="37" cy="50" r="5" fill="#4ade80"/>
+    <text x="51" y="47" fill="#86efac" font-size="11" font-weight="700">편집 범위 고정</text>
+    <text x="51" y="64" class="micro">기존 볼륨·노브 기능과 분리</text>
+    <rect x="16" y="112" width="108" height="112" rx="14" fill="url(#blue)" stroke="#93c5fd" stroke-width="2"/>
+    <rect x="43" y="101" width="55" height="21" rx="10" fill="#dbeafe"/>
+    <text x="51" y="115" fill="#1d4ed8" font-size="9" font-weight="750">선택됨</text>
+    <text x="34" y="153" fill="#dbeafe" font-size="10">왼쪽 버튼</text>
+    <text x="34" y="184" fill="#fff" font-size="13" font-weight="700">이전 곡</text>
+    <rect x="145" y="112" width="108" height="112" rx="14" fill="#111827" stroke="#6b819d" stroke-width="2"/>
+    <text x="163" y="153" class="micro">가운데 버튼</text>
+    <text x="163" y="184" class="label">재생/일시정지</text>
+    <rect x="274" y="112" width="108" height="112" rx="14" fill="#111827" stroke="#6b819d" stroke-width="2"/>
+    <text x="292" y="153" class="micro">오른쪽 버튼</text>
+    <text x="292" y="184" class="label">Finder 실행</text>
+    <text x="68" y="258" class="micro">이 3개 버튼 외 장치 입력은 수정하지 않습니다.</text>
+  </g>
+
+  <rect x="602" y="294" width="292" height="442" rx="20" fill="url(#card)" stroke="#263244"/>
+  <text x="628" y="327" class="micro">Profile 1 · 선택한 키</text>
+  <text x="628" y="356" class="heading">왼쪽 키</text>
+  <text x="628" y="390" class="label">동작 종류</text>
+  <rect x="628" y="405" width="240" height="42" rx="10" fill="#0a111a" stroke="#334155"/>
+  <rect x="632" y="409" width="116" height="34" rx="8" fill="#2563eb"/>
+  <text x="656" y="431" class="button">음악 제어</text>
+  <text x="789" y="431" class="label">앱 실행</text>
+  <text x="628" y="482" class="label">음악 동작</text>
+  <rect x="628" y="497" width="240" height="43" rx="10" class="input"/>
+  <text x="646" y="524" class="label">이전 곡</text>
+  <path d="m843 514 7 7 7-7" fill="none" stroke="#94a3b8" stroke-width="2"/>
+  <rect x="628" y="565" width="240" height="54" rx="12" fill="#111827" stroke="#334155"/>
+  <circle cx="649" cy="592" r="5" fill="#fbbf24"/>
+  <text x="663" y="589" fill="#fde68a" font-size="11" font-weight="650">미적용 변경</text>
+  <text x="663" y="606" class="micro">P1, P3에 변경사항이 있습니다.</text>
+  <rect x="628" y="647" width="240" height="48" rx="11" fill="#2563eb"/>
+  <text x="701" y="677" class="button">장치에 적용</text>
+  <text x="628" y="718" class="micro">복원만으로는 장치가 변경되지 않습니다.</text>
+
+  <rect x="918" y="206" width="440" height="622" rx="20" fill="#101925" stroke="#3b4c64" stroke-width="2"/>
+  <text x="946" y="241" class="heading">사용자 백업</text>
+  <rect x="1252" y="220" width="78" height="30" rx="15" fill="#152235" stroke="#60a5fa"/>
+  <text x="1272" y="240" class="blueText">3 / 10</text>
+  <text x="946" y="264" class="body">Profile 2~5 설정을 로컬에 저장합니다.</text>
+
+  <rect x="946" y="285" width="384" height="199" rx="15" fill="#0b121b" stroke="#334155"/>
+  <text x="966" y="313" class="subheading">새 백업</text>
+  <text x="966" y="340" class="label">백업 이름 *</text>
+  <rect x="966" y="350" width="344" height="38" rx="9" class="input"/>
+  <text x="980" y="374" fill="#e2e8f0" font-size="12">작업용 키 세팅</text>
+  <text x="1275" y="340" class="micro">9 / 40</text>
+  <text x="966" y="415" class="label">설명</text>
+  <rect x="966" y="426" width="344" height="38" rx="9" class="input"/>
+  <text x="980" y="450" class="body">개발 앱과 음악 제어 조합</text>
+  <rect x="1174" y="470" width="136" height="38" rx="9" fill="#2563eb"/>
+  <text x="1211" y="494" class="button">백업 저장</text>
+
+  <text x="946" y="517" class="subheading">저장된 백업</text>
+  <text x="1263" y="517" class="micro">최신순</text>
+
+  <rect x="946" y="532" width="384" height="108" rx="14" fill="#152235" stroke="#60a5fa"/>
+  <circle cx="968" cy="556" r="5" fill="#60a5fa"/>
+  <text x="982" y="560" class="label">작업용 키 세팅</text>
+  <text x="982" y="579" class="micro">2026. 7. 22. 15:40 · P2~P5 · 키 12개</text>
+  <text x="966" y="606" class="body">개발 앱과 음악 제어 조합</text>
+  <rect x="1168" y="594" width="142" height="32" rx="8" fill="#2563eb"/>
+  <text x="1192" y="615" class="button">편집 화면에 복원</text>
+
+  <rect x="946" y="650" width="384" height="76" rx="14" fill="#0b121b" stroke="#334155"/>
+  <text x="966" y="678" class="label">스트리밍 기본값</text>
+  <text x="966" y="699" class="micro">2026. 7. 20. 21:12 · P2~P5 · 키 12개</text>
+  <text x="1280" y="683" class="micro">···</text>
+
+  <rect x="946" y="736" width="384" height="76" rx="14" fill="#0b121b" stroke="#334155"/>
+  <text x="966" y="764" class="label">순정 음악 제어</text>
+  <text x="966" y="785" class="micro">2026. 7. 18. 09:30 · P2~P5 · 키 12개</text>
+  <text x="1280" y="769" class="micro">···</text>
+
+  <rect x="82" y="760" width="812" height="68" rx="14" fill="#171407" stroke="#5b4815"/>
+  <path d="M107 779l9 17H98z" fill="#fbbf24"/>
+  <text x="128" y="787" fill="#fde68a" font-size="11" font-weight="650">Profile 2~5 장치 적용은 프로토콜 검증 전까지 비활성화됩니다.</text>
+  <text x="128" y="806" class="body">편집과 백업·복원은 가능하며, 복원 후 별도로 장치에 적용해야 합니다.</text>
+
+  <rect x="82" y="850" width="1276" height="28" rx="9" fill="#0f2c20" stroke="#24563a"/>
+  <circle cx="102" cy="864" r="4" fill="#4ade80"/>
+  <text x="115" y="868" fill="#86efac" font-size="11" font-weight="650">백업에는 하단 버튼 설정만 저장됩니다. 기존 볼륨·노브와 장치 원복용 안전 백업, Save·펌웨어·LED는 변경하지 않습니다.</text>
+
+  <text x="58" y="932" class="micro">GUI concept · 2026-07-22 · 5 profiles + up to 10 local user backups</text>
+</svg>

@@ -25,6 +25,8 @@ export function SettingsView({
   onReset,
   onSave,
 }: SettingsViewProps) {
+  const settingsDisabled = !status.deviceConnected || !status.protocolReady;
+
   return (
     <div className="settings-view">
       <div className="settings-actions">
@@ -42,8 +44,22 @@ export function SettingsView({
         </p>
       )}
 
-      <DisplaySettingsSection config={config} onPatch={onPatch} />
-      <KnobSettingsSection config={config} onPatch={onPatch} />
+      {settingsDisabled && (
+        <p className="connection-required" role="alert">
+          XPAD Mini 연결과 LCD 프로토콜 준비 후 설정을 변경할 수 있습니다.
+        </p>
+      )}
+
+      <DisplaySettingsSection
+        config={config}
+        disabled={settingsDisabled}
+        onPatch={onPatch}
+      />
+      <KnobSettingsSection
+        config={config}
+        disabled={settingsDisabled}
+        onPatch={onPatch}
+      />
 
       <p className="safety">
         LCD 프레임과 노브 좌우 임시 매핑은 장치 RAM으로만 전송합니다.
@@ -51,10 +67,14 @@ export function SettingsView({
       </p>
 
       <div className="save-bar">
-        <button className="primary" disabled={!dirty} onClick={() => void onSave()}>
+        <button
+          className="primary"
+          disabled={settingsDisabled || !dirty}
+          onClick={() => void onSave()}
+        >
           설정 저장
         </button>
-        <button disabled={!dirty} onClick={onReset}>
+        <button disabled={settingsDisabled || !dirty} onClick={onReset}>
           되돌리기
         </button>
         {message && <span role="status">{message}</span>}
