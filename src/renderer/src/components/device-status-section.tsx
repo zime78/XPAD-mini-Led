@@ -1,6 +1,12 @@
 import type { StatusSnapshot } from '../../../shared/types';
 
-export function DeviceStatusSection({ status }: { status: StatusSnapshot }) {
+export function DeviceStatusSection({
+  status,
+  onReconnect,
+}: {
+  status: StatusSnapshot;
+  onReconnect?: () => void;
+}) {
   const knobStatus =
     status.knobFineVolumeState === 'active'
       ? '미세 볼륨 적용됨'
@@ -36,6 +42,17 @@ export function DeviceStatusSection({ status }: { status: StatusSnapshot }) {
           }
         />
       </div>
+      {!status.deviceConnected && onReconnect && (
+        <button
+          type="button"
+          className="reconnect-button"
+          onClick={onReconnect}
+          title="XPAD Mini 다시 연결"
+          aria-label="XPAD Mini 다시 연결"
+        >
+          다시 연결
+        </button>
+      )}
     </section>
   );
 }

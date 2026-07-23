@@ -60,6 +60,9 @@ export function App() {
     const selectProfile = async (profileId: ProfileId) => {
       setStatus(await window.xpad.switchKeyboardProfile(profileId));
     };
+    const reconnectDevice = async () => {
+      setStatus(await window.xpad.reconnectDevice());
+    };
     const togglePlayerViewMode = async () => {
       if (viewModeChanging) return;
       setViewModeChanging(true);
@@ -99,6 +102,7 @@ export function App() {
           actionError={playerActionError}
           onToggleViewMode={() => void togglePlayerViewMode()}
           onRunAction={(slot) => void runPlayerAction(slot)}
+          onReconnect={() => void reconnectDevice()}
         />
       </main>
     );
@@ -140,6 +144,10 @@ export function App() {
     setStatus(await window.xpad.refreshNowPlaying());
   };
 
+  const reconnectDevice = async () => {
+    setStatus(await window.xpad.reconnectDevice());
+  };
+
   return (
     <main className="app-shell settings-screen">
       <AppHeader
@@ -155,6 +163,7 @@ export function App() {
         message={message}
         onPatch={patch}
         onRefresh={refresh}
+        onReconnect={() => void reconnectDevice()}
         onReset={() => setConfig(saved)}
         onSave={save}
       />

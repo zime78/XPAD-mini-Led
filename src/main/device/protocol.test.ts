@@ -16,9 +16,11 @@ describe('XpadProtocol.readKeyboardProfiles', () => {
     const device = new EventEmitter() as EventEmitter & {
       bulk: FakeBulk;
       connected: boolean;
+      reportWriteHealth: (ok: boolean) => void;
     };
     device.bulk = bulk;
     device.connected = true;
+    device.reportWriteHealth = () => {};
     const protocol = new XpadProtocol(device as unknown as XpadDevice);
 
     device.emit('connect');
@@ -43,9 +45,11 @@ describe('XpadProtocol.selectProfile', () => {
     const device = new EventEmitter() as EventEmitter & {
       bulk: FakeBulk;
       connected: boolean;
+      reportWriteHealth: (ok: boolean) => void;
     };
     device.bulk = bulk;
     device.connected = true;
+    device.reportWriteHealth = () => {};
     const protocol = new XpadProtocol(device as unknown as XpadDevice);
 
     device.emit('connect');
@@ -200,9 +204,11 @@ function connectedProtocol(bulk: FakeBulk): XpadProtocol {
   const device = new EventEmitter() as EventEmitter & {
     bulk: FakeBulk;
     connected: boolean;
+    reportWriteHealth: (ok: boolean) => void;
   };
   device.bulk = bulk;
   device.connected = true;
+  device.reportWriteHealth = () => {};
   const protocol = new XpadProtocol(device as unknown as XpadDevice);
   device.emit('connect');
   return protocol;

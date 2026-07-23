@@ -22,6 +22,8 @@ const api = {
     ipcRenderer.invoke('set-config', config),
   refreshNowPlaying: (): Promise<StatusSnapshot> =>
     ipcRenderer.invoke('refresh-now-playing'),
+  reconnectDevice: (): Promise<StatusSnapshot> =>
+    ipcRenderer.invoke('reconnect-device'),
   switchKeyboardProfile: (profileId: ProfileId): Promise<StatusSnapshot> =>
     ipcRenderer.invoke('switch-keyboard-profile', profileId),
   getPlayerViewMode: (): Promise<PlayerViewMode> =>

@@ -161,6 +161,11 @@ export class DeviceHost extends EventEmitter {
     this.send({ type: 'configureKnob', enabled, backup });
   }
 
+  /** 워커의 HID 핸들을 강제로 닫았다 다시 열어 USB 재연결을 수동으로 유도한다. */
+  reconnect(): void {
+    this.send({ type: 'reconnect' });
+  }
+
   readKeyboardProfiles(): Promise<KeyboardDeviceSnapshot> {
     if (!this.worker || !this.connected || !this.protocolReady) {
       return Promise.reject(new Error('XPAD Mini 연결과 프로토콜 준비가 필요합니다.'));

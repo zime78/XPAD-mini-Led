@@ -25,6 +25,7 @@ export type WorkerInMessage =
       backup?: KeyboardKeymapBackup;
     }
   | { type: 'selectKeyboardProfile'; requestId: number; profileId: ProfileId }
+  | { type: 'reconnect' }
   | { type: 'shutdown' };
 
 export type WorkerOutMessage =
@@ -71,6 +72,7 @@ const initialKnobConfig = workerData as {
   keyboardBackup?: KeyboardKeymapBackup;
   keyboardMappingsEnabled: boolean;
 };
+
 let currentFrame: Buffer | null = null;
 let timer: NodeJS.Timeout | null = null;
 let epoch = 0;
@@ -115,6 +117,10 @@ function scheduleStreaming(): void {
 
 device.on('connect', reportStatus);
 device.on('disconnect', () => {
+  // 분리 중에는 스트리밍을 멈춰, 잔존 tick의 LCD draw(0x25)가 재연결 직후
+  // 프로필 스캔 I/O(0x02/0x10)와 인터리브되어 화면을 오염시키는 것을 막는다.
+  // 재연결 시 onReady → queueKnobConfiguration의 finally에서 다시 재개된다.
+  pauseStreaming();
   knobFineVolumeState = knobEnabled ? 'pending' : 'disabled';
   knobFineVolumeError = null;
   keyboardSnapshot = null;
@@ -136,6 +142,9 @@ function pauseStreaming(): void {
 
 function resumeStreaming(): void {
   streamingPaused = false;
+  // pause 구간(프로필 스캔·KeyInfo 쓰기)이 LCD를 흐트러뜨릴 수 있으므로,
+  // 재개 시 diff 캐시를 비워 전체 프레임을 강제 전송해 화면을 복구한다.
+  protocol.invalidateFrameCache();
   scheduleStreaming();
 }
 
@@ -148,8 +157,8 @@ function queueKnobConfiguration(): void {
   knobQueue = knobQueue
     .catch(() => {})
     .then(async () => {
-      if (!protocol.ready) return;
       try {
+        if (!protocol.ready) return;
         const result = await protocol.configureKnobFineVolume(knobEnabled, knobBackup);
         if (result.backup) knobBackup = result.backup;
         if (version !== knobConfigVersion) return;
@@ -312,6 +321,10 @@ port.on('message', (message: WorkerInMessage) => {
     );
   } else if (message.type === 'selectKeyboardProfile') {
     queueKeyboardProfileSelection(message.requestId, message.profileId);
+  } else if (message.type === 'reconnect') {
+    // 핸들을 강제로 닫고 다시 연다. connect 이벤트 → reportStatus,
+    // protocol.onReady → knob/keyboard 재설정이 자동으로 이어진다.
+    device.reconnect();
   } else if (message.type === 'shutdown') {
     void shutdown();
   }

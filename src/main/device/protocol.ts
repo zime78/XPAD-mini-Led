@@ -133,7 +133,9 @@ export class XpadProtocol {
     try {
       device.on('data', onData);
       device.write(this.buildPacket(CMD_SCREEN_INFO, Buffer.alloc(0)));
-      setTimeout(() => device.removeListener('data', onData), 2000);
+      setTimeout(() => {
+        device.removeListener('data', onData);
+      }, 2000);
     } catch (error) {
       device.removeListener('data', onData);
       console.error('[protocol] ScreenInfo failed', error);
@@ -632,6 +634,12 @@ export class XpadProtocol {
     }
   }
 
+  /** 스트리밍 재개 시 다음 프레임을 전체(force) 전송하도록 diff 캐시를 비운다. */
+  invalidateFrameCache(): void {
+    this.lastFrame = null;
+    this.framesUntilFull = 0;
+  }
+
   async drawLcdFrame(rgb565: Buffer): Promise<void> {
     const device = this.device.bulk;
     if (!device || !this._ready) return;
@@ -703,8 +711,13 @@ export class XpadProtocol {
   ): boolean {
     try {
       device.write(packet);
+      // write 성공을 device에 보고해 연속 실패 카운터를 리셋한다.
+      this.device.reportWriteHealth(true);
       return true;
     } catch (error) {
+      // write 실패를 device에 보고한다. macOS는 USB 분리 후에도 enumeration에
+      // 장치를 남기므로, 실제 write 실패가 물리 분리의 유일한 신뢰 신호다.
+      this.device.reportWriteHealth(false);
       const now = Date.now();
       if (now - this.lastError > 5000) {
         this.lastError = now;

@@ -37,6 +37,7 @@ type PlayerViewProps = {
   actionError: string;
   onToggleViewMode: () => void;
   onRunAction: (slot: KeyboardSlot) => void;
+  onReconnect: () => void;
 };
 
 export function PlayerView({
@@ -50,6 +51,7 @@ export function PlayerView({
   actionError,
   onToggleViewMode,
   onRunAction,
+  onReconnect,
 }: PlayerViewProps) {
   const track = status.track;
   const mini = viewMode === 'mini';
@@ -87,6 +89,17 @@ export function PlayerView({
         ) : (
           <div className="player-toolbar-primary">
             <PlayerStatus status={status} />
+            {!status.deviceConnected && (
+              <button
+                type="button"
+                className="reconnect-button"
+                onClick={onReconnect}
+                title="XPAD Mini 다시 연결"
+                aria-label="XPAD Mini 다시 연결"
+              >
+                다시 연결
+              </button>
+            )}
             <span className="player-toolbar-separator" aria-hidden="true" />
             <QuickProfileSwitch status={status} onSelect={onSelectProfile} />
           </div>

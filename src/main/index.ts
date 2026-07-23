@@ -171,6 +171,13 @@ function updateTray(status: StatusSnapshot): void {
         label: status.protocolReady ? 'XPAD Mini 연결됨' : 'XPAD Mini 연결 대기 중',
         enabled: false,
       },
+      {
+        label: 'XPAD Mini 다시 연결',
+        enabled: !hidDisabled,
+        click: () => {
+          if (!hidDisabled) deviceHost.reconnect();
+        },
+      },
       { type: 'separator' },
       { label: '지금 새로고침', click: () => void monitor.refresh() },
       { label: '키보드 설정…', click: () => openKeyboardSettingsWindow() },
@@ -650,6 +657,10 @@ function registerIpc(): void {
   });
   ipcMain.handle('refresh-now-playing', async () => {
     await monitor.refresh();
+    return currentStatus();
+  });
+  ipcMain.handle('reconnect-device', () => {
+    if (!hidDisabled) deviceHost.reconnect();
     return currentStatus();
   });
 }

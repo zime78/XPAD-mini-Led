@@ -11,6 +11,7 @@ type SettingsViewProps = {
   message: string;
   onPatch: ConfigPatch;
   onRefresh: () => Promise<void>;
+  onReconnect: () => void;
   onReset: () => void;
   onSave: () => Promise<void>;
 };
@@ -22,6 +23,7 @@ export function SettingsView({
   message,
   onPatch,
   onRefresh,
+  onReconnect,
   onReset,
   onSave,
 }: SettingsViewProps) {
@@ -33,7 +35,7 @@ export function SettingsView({
         <button onClick={() => void onRefresh()}>현재 곡 새로고침</button>
       </div>
 
-      <DeviceStatusSection status={status} />
+      <DeviceStatusSection status={status} onReconnect={onReconnect} />
 
       {status.monitorError && (
         <p className="error" role="alert">음악 정보 확인 오류: {status.monitorError}</p>

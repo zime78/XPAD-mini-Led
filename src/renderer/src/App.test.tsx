@@ -77,6 +77,7 @@ describe('XPAD Mini Now Playing 화면', () => {
       getConfig: vi.fn().mockResolvedValue(config),
       setConfig: vi.fn().mockImplementation(async (next) => next),
       refreshNowPlaying: vi.fn().mockResolvedValue(status),
+      reconnectDevice: vi.fn().mockResolvedValue(status),
       switchKeyboardProfile: vi.fn().mockImplementation(async (profileId) => ({
         ...status,
         keyboardProfileState: {
