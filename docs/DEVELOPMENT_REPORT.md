@@ -49,7 +49,7 @@ macOS에서 실행되는 데스크톱 앱이 Spotify 또는 Apple Music의 현�
 ```mermaid
 flowchart LR
     A[Spotify / Apple Music] -->|AppleScript 조회| B[NowPlayingMonitor]
-    B -->|TrackInfo| C[오프스크린 SVG 렌더러]
+    B -->|TrackInfo| C[240×135 Canvas 렌더러]
     C -->|240×135 RGB565| D[Device Worker]
     D -->|Sayo API v2 / HID 0x25| E[XPAD Mini LCD RAM]
     F -->|P1~P5 선택 IPC| D
@@ -58,7 +58,7 @@ flowchart LR
     G -->|전역 단축키| H[다음 실제 macOS 출력 단계 탐색]
     H -->|실제 출력값 readback| C
     B --> F[Electron 설정 화면·트레이]
-    C -->|PNG 미리보기| F
+    C -->|RGB565 미리보기| F
     D -->|연결·프로토콜 상태| F
 ```
 
@@ -91,16 +91,18 @@ UI와 음악 조회를 막지 않도록 분리했다.
 구현 파일:
 
 - [`src/main/display/frame-renderer.ts`](../src/main/display/frame-renderer.ts)
+- [`src/main/display/frame-pipeline.ts`](../src/main/display/frame-pipeline.ts)
+- [`src/main/display/text-layout.ts`](../src/main/display/text-layout.ts)
 - [`src/main/display/volume-overlay.ts`](../src/main/display/volume-overlay.ts)
 
-- Electron의 숨겨진 offscreen `BrowserWindow`에서 240×135 SVG 화면을 렌더링한다.
+- Electron의 숨겨진 offscreen `BrowserWindow`에서 240×135 Canvas에 최종 해상도로 직접 렌더링한다. 화면 캡처와 후속 리사이즈는 사용하지 않는다.
 - Spotify는 녹색, Apple Music은 붉은색 강조색을 사용한다.
 - 앨범아트, 서비스명, 곡명, 아티스트, 앨범, 재생/일시 정지 아이콘과 진행률을 그린다.
-- 앨범아트 표시 여부에 따라 텍스트 영역과 줄바꿈 길이를 자동 조정한다.
-- 글자 수가 화면 폭을 넘으면 줄바꿈 또는 말줄임표를 적용한다.
-- 폰트와 이미지 로딩이 완료된 다음 캡처하며, 빈 캡처가 나오면 최대 3회 재시도한다.
-- 캡처된 PNG의 각 픽셀을 XPAD Mini가 사용하는 RGB565 little-endian 바이트로 변환한다.
-- 같은 프레임으로 설정 화면의 LCD 미리보기도 제공한다.
+- 앨범아트는 고품질 보간과 중앙 크롭으로 96×96 정수 픽셀 영역에 축소하고, 텍스트 영역은 실제 Canvas 측정 폭에 맞춰 확장한다.
+- 곡명은 `Intl.Segmenter`의 단어 경계와 그래핌 경계를 사용해 최대 두 줄로 배치하고, 15~19px 범위에서 가장 큰 글꼴을 선택한다. 아티스트와 앨범도 실제 픽셀 폭으로 말줄임한다.
+- 배경과 앨범아트를 먼저 그린 뒤 4×4 Bayer ordered dithering으로 RGB565 팔레트에 맞추고, 텍스트와 아이콘은 이후에 그려 가장자리 노이즈를 피한다.
+- 최종 Canvas PNG를 XPAD Mini가 사용하는 RGB565 little-endian 바이트로 변환한다.
+- 설정 화면의 LCD 미리보기는 전송할 RGB565 데이터를 PNG로 다시 복원하고 `image-rendering: pixelated`로 표시해 색상 양자화와 픽셀 경계를 실기기에 맞춘다.
 - 노브 조절 결과가 있으면 곡 화면 위에 실제 출력 볼륨 퍼센트와 비례 막대를 합성한다.
 
 메인 프로세스의 렌더 큐는 여러 상태 변경이 겹치면 오래된 결과를 버리고 가장 최근 곡과
@@ -502,7 +504,8 @@ notarytool 자격정보를 설정한 뒤 notarization과 staple 검증을 추가
 | 미세 볼륨 증가 | F19 readback과 실제 60에서 다음 출력 단계 64 탐색 후 XPAD 노브 오른쪽 회전 확인 |
 | 볼륨 단계 진단 | 출력 47에서 46을 요청해도 적용값이 47로 반환되고 47로 원복됨 — 일부 1% 입력은 출력 장치/AppleScript 경로에서 같은 단계로 반올림됨 |
 | 노브-출력 단계 매칭 | 실제 51에서 한 칸 내림은 3회 탐색 후 47, 한 칸 올림은 2회 탐색 후 51, 빠른 두 칸 내림은 실제 두 단계 44 적용 후 원래 51로 복원 |
-| 볼륨 피드백 OSD | 실제 readback 이벤트와 0%·64%·100% SVG 출력을 자동 테스트로 확인. 배포 후 실기기 노브 회전 화면은 별도 육안 확인하지 않음 |
+| 볼륨 피드백 OSD | 실제 readback 이벤트와 0%·64%·100% 값 정규화를 자동 테스트로 확인. 배포 후 실기기 노브 회전 화면은 별도 육안 확인하지 않음 |
+| LCD 렌더링 품질 | 단어·한글·emoji 그래핌 줄바꿈, RGB565 ordered dithering, little-endian 인코딩과 재구성 프리뷰를 단위 테스트로 확인. `dev-ui`에서 `Break My Heart`가 `Break My` / `Heart`로 표시되고 렌더 오류가 없음을 확인 |
 | 음악 정보 | Apple Music 곡명·아티스트·앨범·앨범아트 표시 확인 |
 | 실제 LCD | 연결된 XPAD Mini LCD의 음악 화면 갱신 확인 |
 
@@ -533,8 +536,8 @@ renderer 공개 UI 동작은 Vitest와 Testing Library로 자동 검증한다. H
 ## 10. 현재 제한사항과 후속 과제
 
 1. Apple notarization은 아직 수행되지 않았다.
-2. 자동화된 HID 프로토콜 통합 테스트와 실기기 LCD 픽셀 검증은 아직 없다. 볼륨 OSD의
-   SVG 출력은 단위 테스트로 검증한다.
+2. 자동화된 HID 프로토콜 통합 테스트와 실기기 LCD 픽셀 검증은 아직 없다. 텍스트 레이아웃과
+   RGB565 변환은 단위 테스트로 검증하지만, 실제 패널의 감마·시야각·서브픽셀 특성은 육안 확인이 필요하다.
 3. Apple Music artwork가 없는 곡이거나 앱이 원시 artwork를 제공하지 않으면 앨범아트
    없이 텍스트 레이아웃으로 표시된다.
 4. Spotify 앨범아트 네트워크 요청이 실패하면 해당 프레임은 텍스트 정보만 사용한다.

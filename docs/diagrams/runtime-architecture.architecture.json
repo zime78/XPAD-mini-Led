@@ -36,7 +36,7 @@
       "id": "renderer",
       "type": "frontend",
       "label": "Frame Renderer",
-      "sublabel": "SVG → PNG → RGB565-LE",
+      "sublabel": "240×135 Canvas → RGB565-LE",
       "pos": [700, 100],
       "size": [170, 64]
     },
@@ -117,7 +117,7 @@
     {
       "from": "renderer",
       "to": "player",
-      "label": "PNG 미리보기",
+      "label": "RGB565 미리보기",
       "fromSide": "bottom",
       "toSide": "right",
       "route": "orthogonal-v",
@@ -153,7 +153,7 @@
       "title": "음악 화면",
       "items": [
         "곡 정보와 앨범아트를 240×135 프레임으로 변환",
-        "같은 PNG를 앱 미리보기에도 사용",
+        "RGB565 재구성 PNG를 앱 미리보기에 사용",
         "변경 청크만 보내고 주기적으로 전체 프레임 재동기화"
       ]
     },
