@@ -46,3 +46,6 @@ assets/clawd-external/
 docs/images/settings-window.png
 # Pulsar's copyrighted manual: keep local, do not redistribute
 Manual_XPad_mini.pdf
+
+# Internal share review notes; only the public README belongs in the repository
+/share/xpad-mini-now-playing/REVIEW_NOTES.md

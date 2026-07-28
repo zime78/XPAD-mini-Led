@@ -5,12 +5,13 @@
 | 항목 | 내용 |
 |---|---|
 | 프로젝트 | XPAD Mini Now Playing |
-| 현재 버전 | `0.1.0` |
+| 현재 버전 | `1.0.0` |
 | 대상 운영체제 | macOS |
 | 대상 장치 | Pulsar Lab XPAD Mini |
 | 개발 위치 | 프로젝트 저장소 루트 |
 | 앱 식별자 | `kr.co.zime.xpad-mini-now-playing` |
-| 최종 확인일 | 2026-07-22 |
+| 실기기 최종 확인일 | 2026-07-22 |
+| 문서·빌드 확인일 | 2026-07-28 |
 
 이 문서는 현재 저장소에 구현된 기능, 내부 구조, XPAD Mini 연결 방식, 빌드·서명·설치
 결과와 실기기 검증 범위를 기록한다. 저수준 명령의 전체 목록과 역공학 근거는
@@ -465,12 +466,13 @@ Apple Events 용도 문구가 설정되어 있다.
 | `spctl -a -t execute` | `accepted`, `source=Developer ID` |
 | Apple notarization | 자격정보 미설정으로 수행하지 못함 |
 
-생성된 배포 파일과 SHA-256은 다음과 같다.
+아래는 2026-07-22에 `0.1.0`으로 생성한 패키징 검증 기록이다. 현재 `1.0.0`
+버전의 DMG는 이번 버전 갱신에서 재생성하지 않았다.
 
 | 대상 | 파일 | SHA-256 |
 |---|---|---|
-| Apple Silicon | `dist/XPAD Mini Now Playing-0.1.0-arm64.dmg` | `f558ec3893469ae300244f897132e8340e2c3233a3f808bacefa6b2ac903351a` |
-| Intel Mac | `dist/XPAD Mini Now Playing-0.1.0.dmg` | 이번 변경에서는 재생성하지 않음 |
+| Apple Silicon (`0.1.0` 기록) | `dist/XPAD Mini Now Playing-0.1.0-arm64.dmg` | `f558ec3893469ae300244f897132e8340e2c3233a3f808bacefa6b2ac903351a` |
+| Intel Mac (`0.1.0` 기록) | `dist/XPAD Mini Now Playing-0.1.0.dmg` | 당시 재생성하지 않음 |
 
 서명과 로컬 Gatekeeper 검사는 통과했지만 Apple 공증은 별도 상태다. 다른 Mac에 외부
 배포할 때 경고 없는 설치 경험이 필요하면 App Store Connect API Key 또는 Apple ID

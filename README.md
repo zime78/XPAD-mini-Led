@@ -2,7 +2,19 @@
 
 macOS의 Spotify와 Apple Music 재생 정보를 읽어 Pulsar Lab XPAD Mini의 240×135 LCD에 표시하고, P1~P5 프로필과 하단 3키를 음악 제어·앱 실행에 연결하는 Electron 트레이 앱입니다.
 
-> ⚠️ **이 앱은 [Pulsar Lab XPAD Mini](https://www.pulsar.gg/products/pulsar-lab-xpad-mini-gaming-key-pad)(VID `0x3710` / PID `0x2507`) 전용입니다.** 이 제품의 벤더 HID 채널과 240×135 LCD에 맞춰 동작하므로 다른 키보드·매크로패드·장치에서는 사용할 수 없습니다.
+> ⚠️ **필수 기기 — [Pulsar Lab XPAD Mini](https://www.pulsar.gg/products/pulsar-lab-xpad-mini-gaming-key-pad) 실기기가 반드시 필요합니다.** 실제 LCD 출력, P1~P5 프로필 전환, 물리 키와 노브 기능은 기기를 USB로 연결해야 사용할 수 있습니다. VID `0x3710` / PID `0x2507`과 240×135 LCD에 맞춘 전용 앱이므로 다른 키보드·매크로패드·XPAD 모델은 지원하지 않습니다.
+>
+> 장치가 없으면 `./build.sh dev-ui`로 설정 UI와 음악 조회만 확인할 수 있습니다. 기기 기능을 실제로 사용하거나 검증할 수는 없습니다.
+
+**제품 정보·구매처:** [글로벌 공식 제품 페이지](https://www.pulsar.gg/products/pulsar-lab-xpad-mini-gaming-key-pad) · [미국 공식몰](https://us.pulsar.gg/products/pulsar-lab-xpad-mini-gaming-key-pad) · [국내 공식 사이트](https://pulsargg.kr/) · [국내 공식파트너몰](https://pulsar-mall.co.kr/)
+
+<p align="center">
+  <a href="https://www.pulsar.gg/products/pulsar-lab-xpad-mini-gaming-key-pad">
+    <img src="https://cdn.shopify.com/s/files/1/0455/0914/8840/files/Pulsarlab_xpadmini_white_front.png" alt="Pulsar Lab XPAD Mini White 제품 이미지" width="420">
+  </a>
+</p>
+
+> 판매 여부와 가격은 지역 및 판매처에 따라 달라질 수 있으므로 각 판매 페이지에서 확인하십시오. 제품 이미지는 제조사 공식 스토어 CDN을 참조하며 저작권은 Pulsar Gaming Gears에 있습니다.
 
 <p align="center">
   <img src="docs/images/screenshots/player-expanded-ai-sample.png" alt="AI 샘플 앨범아트를 적용한 XPAD Mini Now Playing 확장 재생 화면" width="900">
@@ -135,23 +147,16 @@ macOS의 Spotify와 Apple Music 재생 정보를 읽어 Pulsar Lab XPAD Mini의 
 
 ### 지원 기기: Pulsar Lab XPAD Mini
 
-<p align="center">
-  <img src="https://cdn.shopify.com/s/files/1/0455/0914/8840/files/Pulsarlab_xpadmini_white_front.png" alt="Pulsar Lab XPAD Mini (White)" width="420">
-</p>
-
-3키 + 노브 + 임베디드 240×135 LCD를 갖춘 초소형 매크로 키패드입니다. 색상은 White·Pink·Turquoise, 가격은 US $39.95입니다(2026년 7월 제조사 공식몰 기준).
-
-**구입처**
-
-- 글로벌 공식: [pulsar.gg 제품 페이지](https://www.pulsar.gg/products/pulsar-lab-xpad-mini-gaming-key-pad) · [미국(us.pulsar.gg)](https://us.pulsar.gg/products/pulsar-lab-xpad-mini-gaming-key-pad)
-- 국내 공식: [Pulsar 한국 공식몰(pulsargg.kr)](https://pulsargg.kr/) · [펄사 공식파트너몰(pulsar-mall.co.kr)](https://pulsar-mall.co.kr/)
-
-> 위 제품 이미지는 제조사 공식 스토어(cdn.shopify.com)의 링크를 참조하며, 저작권은 Pulsar Gaming Gears에 있습니다. 저장소에 재배포용으로 저장하지 않습니다.
+3키 + 노브 + 임베디드 240×135 LCD를 갖춘 초소형 매크로 키패드입니다.
+제품 이미지와 공식 제품 정보·구매처는 문서 상단에서 확인할 수 있습니다.
 
 ## macOS 설치와 권한
 
-- Apple Silicon DMG: `dist/XPAD Mini Now Playing-0.1.0-arm64.dmg`
-- Intel Mac DMG: `dist/XPAD Mini Now Playing-0.1.0.dmg`
+`./build.sh package all` 실행 시 현재 버전 기준으로 아래 DMG가 생성됩니다. 이번
+`1.0.0` 버전 갱신에서는 DMG를 새로 만들지 않았습니다.
+
+- Apple Silicon 예상 경로: `dist/XPAD Mini Now Playing-1.0.0-arm64.dmg`
+- Intel Mac 예상 경로: `dist/XPAD Mini Now Playing-1.0.0.dmg`
 - 설치 위치: `/Applications/XPAD Mini Now Playing.app`
 
 처음 음악 정보를 읽을 때 macOS가 Spotify 또는 Music 자동화 제어 권한을 요청할 수 있습니다. XPAD Mini는 키보드를 포함한 복합 HID이므로 최초 직접 연결 시 `시스템 설정 → 개인정보 보호 및 보안 → 입력 모니터링`에서 앱을 허용해야 합니다. Bibimbap Web DRV나 다른 HID 도구와 동시에 장치를 열지 마십시오.

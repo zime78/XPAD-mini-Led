@@ -1,6 +1,6 @@
 {
   "name": "xpad-mini-now-playing",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Spotify and Apple Music now-playing display for the Pulsar Lab XPAD Mini LCD",
   "main": "./out/main/index.js",
   "author": "SpinnerMaster",
