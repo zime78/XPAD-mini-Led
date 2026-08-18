@@ -1,5 +1,5 @@
 <!-- Parent: ../AGENTS.md -->
-<!-- Generated: 2026-08-18 | Updated: 2026-08-18 -->
+<!-- Generated: 2026-08-18 | Updated: 2026-08-19 -->
 
 # src
 
@@ -15,7 +15,7 @@ React UI. `?view=`가 없으면 재생 창, `settings`면 일반 설정, `keyboa
 | `App.tsx` | 뷰 분기, `window.xpad` 구독, 프로필 전환·재생 액션·설정 저장 |
 | `App.test.tsx` | 뷰 라우팅·주요 상호작용 |
 | `keyboard-action-label.ts` | 키/앱 실행 라벨(전체·compact) |
-| `youtube-playback-label.ts` | YouTube 제목·진행률·베젤 전송 간격(`NNms`) |
+| `youtube-playback-label.ts` | YouTube 제목·진행률·시크 초 환산·베젤 전송 간격(`NNms`) |
 | `styles.css` | 재생·설정·키보드 창 스타일. 확장 680×320 / 미니 300×248에 맞춤 |
 | `env.d.ts` | `window.xpad: XpadApi` |
 | `assets.d.ts` | 정적 에셋 모듈 선언 |

@@ -1,5 +1,5 @@
 <!-- Parent: ../AGENTS.md -->
-<!-- Generated: 2026-08-18 | Updated: 2026-08-18 -->
+<!-- Generated: 2026-08-18 | Updated: 2026-08-19 -->
 
 # components
 
@@ -11,7 +11,9 @@
 
 | File | Description |
 |------|-------------|
-| `player-view.tsx` | 확장/미니 재생 창. 상태, P1–P5, 하단 3키, YouTube 베젤 전송 간격(`.lcd-delay`) |
+| `player-view.tsx` | 확장/미니 재생 창. P1–P5, YouTube 베젤·시크 바·목록 추가/리스트 |
+| `youtube-settings-section.tsx` | 설정 창 YouTube 목록 추가·이동·재생·삭제 |
+| `youtube-account-section.tsx` | persist 세션 로그인/로그아웃 |
 | `player-status.tsx` | USB/LCD/노브 상태 점과 트랙 메타, LCD 미리보기 |
 | `quick-profile-switch.tsx` | P1–P5 단축 버튼 + 현재 슬롯 라벨 |
 | `app-header.tsx` | 설정/키보드 창 헤더와 재생 창 아이콘 버튼 |

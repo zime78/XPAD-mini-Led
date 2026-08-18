@@ -84,7 +84,11 @@ import {
 } from './input/fine-volume';
 import { KeyActionRouter } from './input/key-action-router';
 import { NowPlayingMonitor } from './music/now-playing';
-import { controlPlayback } from './music/playback-controls';
+import {
+  consumePreviousTrackAction,
+  controlPlayback,
+  resetPreviousTrackAction,
+} from './music/playback-controls';
 
 let tray: Tray | null = null;
 let playerWindow: BrowserWindow | null = null;
@@ -163,6 +167,7 @@ function currentStatus(): StatusSnapshot {
     youtubeLcdActive: Boolean(youtubeLcd?.active),
     youtubeLcdDelayMs: youtubeLcd?.active ? youtubeLcd.delayMs : null,
     youtubePlayback: youtubeLcd?.active ? youtubePlayback : null,
+    youtubeLibrary: structuredClone(config.youtubeLibrary),
     youtubeAccount,
     knobFineVolumeState: fineVolumeError
       ? 'error'
@@ -525,6 +530,8 @@ function stopYoutubeLcdSample(silent = false): void {
   refreshDisplay('youtube-stop');
 }
 
+let youtubePlaySeq = 0;
+
 async function playYoutubeIndex(index: number): Promise<void> {
   const selected = selectYoutubeIndex(config.youtubeLibrary, index);
   persistYoutubeLibrary(selected);
@@ -533,17 +540,35 @@ async function playYoutubeIndex(index: number): Promise<void> {
     stopYoutubeLcdSample(false);
     return;
   }
+  const seq = ++youtubePlaySeq;
   if (youtubeLcd?.active) {
     youtubePlayback = pendingYoutubePlayback(item.videoId);
     broadcastStatus();
     await youtubeLcd.load(item.videoId);
     return;
   }
+  if (seq !== youtubePlaySeq) return;
   startYoutubeLcdSample(item.videoId);
+}
+
+async function seekYoutubePlayback(rawSeconds: unknown): Promise<YoutubeCommandResult> {
+  const seconds = Number(rawSeconds);
+  if (!Number.isFinite(seconds)) throw new Error('이동할 위치를 찾지 못했습니다.');
+  if (!youtubeLcd?.active) throw new Error('재생할 영상이 없습니다.');
+  resetPreviousTrackAction();
+  const duration = youtubePlayback?.duration ?? 0;
+  const clamped = duration > 0 ? Math.min(duration, Math.max(0, seconds)) : Math.max(0, seconds);
+  await youtubeLcd.seekTo(clamped);
+  if (youtubePlayback) {
+    youtubePlayback = { ...youtubePlayback, position: clamped };
+  }
+  broadcastStatus();
+  return youtubeCommandResult();
 }
 
 async function controlYoutube(command: YoutubeTransportCommand): Promise<void> {
   if (command === 'play-pause') {
+    resetPreviousTrackAction();
     if (!youtubeLcd?.active) {
       startYoutubeIfNeeded();
       if (!youtubeLcd?.active) throw new Error('재생할 영상이 없습니다.');
@@ -551,6 +576,19 @@ async function controlYoutube(command: YoutubeTransportCommand): Promise<void> {
     }
     await youtubeLcd.controlPlayPause();
     return;
+  }
+  if (command === 'previous') {
+    if (consumePreviousTrackAction() === 'restart') {
+      if (!youtubeLcd?.active) {
+        startYoutubeIfNeeded();
+        if (!youtubeLcd?.active) throw new Error('재생할 영상이 없습니다.');
+        return;
+      }
+      await youtubeLcd.seekTo(0);
+      return;
+    }
+  } else {
+    resetPreviousTrackAction();
   }
   const stepped = stepYoutubeIndex(config.youtubeLibrary, command === 'next' ? 1 : -1);
   if (!currentYoutubeItem(stepped)) throw new Error('재생할 영상이 없습니다.');
@@ -984,6 +1022,10 @@ function registerIpc(): void {
     }
     await controlYoutube(value as YoutubeTransportCommand);
     return youtubeCommandResult();
+  });
+  ipcMain.handle('youtube-seek', async (event, value: unknown) => {
+    requireSettingsOrPlayer(event);
+    return seekYoutubePlayback(value);
   });
   ipcMain.handle('youtube-sign-in', async (event) => {
     requireSettingsOrPlayer(event);

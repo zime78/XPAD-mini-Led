@@ -9,6 +9,8 @@ import {
   youtubePlaybackTimeLabel,
   youtubePlaybackTitle,
   youtubeLcdDelayLabel,
+  seekRatioToSeconds,
+  seekSecondsFromClientX,
 } from './youtube-playback-label';
 
 const info: YoutubePlaybackInfo = {
@@ -43,6 +45,15 @@ describe('youtube playback labels', () => {
     expect(youtubePlaybackTimeLabel(null)).toBeNull();
     expect(youtubePlaybackProgress(null)).toBeNull();
     expect(youtubePlaybackStateLabel({ ...info, adPlaying: true })).toBe('광고');
+  });
+
+  it('converts a progress-bar click ratio to seconds', () => {
+    expect(seekRatioToSeconds(0.5, 180)).toBe(90);
+    expect(seekRatioToSeconds(-0.2, 180)).toBe(0);
+    expect(seekRatioToSeconds(2, 180)).toBe(180);
+    expect(seekRatioToSeconds(0.5, 0)).toBeNull();
+    expect(seekSecondsFromClientX(50, 0, 100, 180)).toBe(90);
+    expect(seekSecondsFromClientX(-10, 0, 100, 180)).toBe(0);
   });
 
   it('prints a compact delay label', () => {

@@ -33,7 +33,9 @@
 
 macOS의 Spotify와 Apple Music 재생 정보를 Pulsar Lab XPAD Mini의 240×135 LCD에
 표시하는 Electron 트레이 앱입니다. 곡 정보와 앨범아트뿐 아니라 P1~P5 프로필,
-하단 3키의 앱 실행, XPAD 노브 미세 볼륨까지 하나의 화면에서 관리합니다.
+하단 3키의 앱 실행, XPAD 노브 미세 볼륨, Profile 5 YouTube 재생까지 하나의
+화면에서 관리합니다. YouTube만 따로 보려면 [YOUTUBE.md](./YOUTUBE.md)를
+보면 됩니다.
 
 ![AI 샘플 앨범아트를 적용한 XPAD Mini Now Playing 확장 화면](../../docs/images/screenshots/player-expanded-ai-sample.png)
 
@@ -44,7 +46,7 @@ macOS의 Spotify와 Apple Music 재생 정보를 Pulsar Lab XPAD Mini의 240×13
 | 현재 버전 | `1.0.0` |
 | 대상 운영체제 | macOS |
 | 대상 장치 | Pulsar Lab XPAD Mini 전용, VID `0x3710` / PID `0x2507` |
-| 음악 서비스 | Spotify, Apple Music |
+| 음악 서비스 | Spotify, Apple Music, YouTube (P5) |
 | LCD | 240×135, RGB565 little-endian |
 | 구현 형태 | Electron + React + Node worker thread + `node-hid` |
 | 소스 코드 | [zime78/XPAD-mini-Led](https://github.com/zime78/XPAD-mini-Led) |
@@ -53,7 +55,7 @@ macOS의 Spotify와 Apple Music 재생 정보를 Pulsar Lab XPAD Mini의 240×13
 
 | 1. 기기 연결 | 2. 음악 재생 | 3. 화면 확인과 설정 |
 | --- | --- | --- |
-| XPAD Mini를 Mac에 USB로 연결하고 입력 모니터링 권한을 허용합니다. | Spotify 또는 Apple Music에서 음악을 재생합니다. | 앱이 곡 정보를 읽어 미리보기와 LCD를 갱신합니다. 필요하면 P2~P5 키와 노브를 설정합니다. |
+| XPAD Mini를 Mac에 USB로 연결하고 입력 모니터링 권한을 허용합니다. | Spotify·Apple Music을 재생하거나, P5에서 YouTube 계정을 연결하고 목록에 영상을 넣습니다. | 앱이 미리보기와 LCD를 갱신합니다. 필요하면 P2~P4 앱 실행과 노브를 설정합니다. |
 
 기획자는 “음악 재생 정보가 앱 화면과 기기 LCD에 함께 표시되고, 프로필별 물리 키가
 음악 제어 또는 앱 실행으로 이어진다”는 사용자 흐름을 먼저 보면 됩니다. 초급
@@ -69,14 +71,12 @@ macOS의 Spotify와 Apple Music 재생 정보를 Pulsar Lab XPAD Mini의 240×13
   작은 LCD에서의 텍스트와 색 표현을 개선했습니다.
 - 확장뷰와 미니뷰를 전환할 수 있으며, 일반 설정과 키보드 설정은 별도 창으로
   분리했습니다.
-- P1은 이전 곡·재생/일시정지·다음 곡으로 고정하고, P2~P5의 하단 3키에는
-  macOS 앱 실행 동작을 연결할 수 있습니다.
+- P1은 이전 곡·재생/일시정지·다음 곡으로 고정하고, P2~P4의 하단 3키에는
+  macOS 앱 실행 동작을 연결할 수 있습니다. P5는 YouTube 이전·재생·다음입니다.
 - XPAD 노브 한 칸을 macOS의 실제 다음 출력 단계에 맞추고, 조절 결과를 LCD와
   앱 미리보기에 잠시 표시합니다.
 - USB 분리 후 3초 간격 재연결, 로그인 시 실행, 키 설정 사용자 백업을 지원합니다.
-- Profile 5는 로그인된 YouTube를 재생한다. 소리는 공식 watch 창, LCD·미리보기는
-  같은 세션의 음소거 창에서 뽑은 240×135 RGB565다. 캡처는 HID 전송보다 조금
-  빠르고, 기기로는 최신 1장만 보낸다. 미리보기 베젤에는 직전 전송 간격을 표시한다.
+- Profile 5 YouTube는 아래 절과 [YOUTUBE.md](./YOUTUBE.md)에 정리했습니다.
 
 ## 화면
 
@@ -95,17 +95,43 @@ macOS의 Spotify와 Apple Music 재생 정보를 Pulsar Lab XPAD Mini의 240×13
 ![XPAD Mini Now Playing 일반 설정 화면](../../docs/images/screenshots/settings.png)
 
 우선 음악 앱, 확인 주기, 앨범아트·진행률 표시, 로그인 시 자동 실행, XPAD 노브
-미세 볼륨을 설정합니다. USB 연결, LCD 프로토콜, 노브 적용 상태도 같은 화면에서
-확인할 수 있습니다.
+미세 볼륨을 설정합니다. 같은 창에서 YouTube 계정 연결과 재생 목록을 관리하고,
+USB 연결·LCD 프로토콜·노브 적용 상태도 확인합니다.
 
 ### 키보드 설정
 
 ![XPAD Mini 프로필과 하단 3키를 관리하는 키보드 설정 화면](../../docs/images/screenshots/keyboard-settings.png)
 
-P1은 음악 제어로 고정되고, P2~P5의 하단 3키에는 macOS 앱 실행 동작을 연결할 수
-있습니다. 화면 왼쪽에서 프로필과 물리 버튼을 고르고, 가운데에서 실행할 앱을
-선택하며, 오른쪽에서 설정 백업을 관리합니다. “장치에서 다시 읽기”는 현재 기기
-상태를 UI에 다시 반영합니다.
+P1은 음악 제어로 고정되고, P2~P4의 하단 3키에는 macOS 앱 실행 동작을 연결할 수
+있습니다. P5는 YouTube 전송으로 고정됩니다. 화면 왼쪽에서 프로필과 물리 버튼을
+고르고, 가운데에서 실행할 앱을 선택하며, 오른쪽에서 설정 백업을 관리합니다.
+“장치에서 다시 읽기”는 현재 기기 상태를 UI에 다시 반영합니다.
+
+## YouTube 재생 (Profile 5)
+
+로그인한 공식 YouTube watch만 사용합니다. 파일을 받아 저장하거나 다시 인코딩하지
+않습니다. 자세한 사용법과 제약는 [YOUTUBE.md](./YOUTUBE.md)에 있습니다.
+![P5 YouTube 재생 창](../../docs/images/screenshots/player-youtube-p5.png)
+
+![YouTube LCD 처리 워크플로](../../docs/images/diagrams/youtube-pipeline.png)
+
+처리 그림 원본은
+[youtube-pipeline.html](https://github.com/zime78/XPAD-mini-Led/blob/main/docs/diagrams/youtube-pipeline.html)
+입니다.
+
+기기는 동영상 파일을 재생하지 못하고 240×135 그림만 받습니다. 그래서 Mac에서
+공식 YouTube를 틀고, 그 화면을 찍어 보냅니다. 화면을 찍는 작업이 소리 창에서
+돌면 소리가 끊겨, 창을 둘로 나눴습니다. 자세한 이유와 초보자 안내는
+[YOUTUBE.md](./YOUTUBE.md)에 있습니다.
+
+1. 설정에서 Google 계정을 연결합니다. 시스템 Chrome 로그인과는 세션이 다릅니다.
+2. 재생 창 **목록 추가**에 URL 또는 영상 ID를 넣습니다. **목록리스트**에서
+   고르거나 지웁니다.
+3. 소리는 숨은 watch 창, LCD는 같은 세션의 음소거 창에서 240×135만 뽑습니다.
+4. 기기로는 최신 1장만 보냅니다. 미리보기 베젤 숫자는 직전 전송 간격입니다.
+5. 이전 키는 한 번이면 처음으로, 짧게 두 번이면 이전 곡입니다. 곡을 바꾸면
+   소리 창과 LCD 창을 같이 다시 엽니다.
+6. 진행 바를 클릭하거나 끌어 위치를 옮길 수 있습니다.
 
 ## 동작 구조
 
@@ -119,8 +145,8 @@ XPAD Mini LCD가 최종 출력이며, 점선으로 표시된 오른쪽 영역만
    읽습니다.
 2. Electron main 프로세스는 최신 상태만 렌더 큐에 남기고 설정 UI와 device worker에
    전달합니다.
-3. 240×135 Canvas 렌더러가 프레임을 만든 뒤 LCD용 RGB565 little-endian 데이터로
-   변환합니다.
+3. 음악 모드는 240×135 Canvas로 프레임을 만들고, YouTube는 음소거 LCD 창에서
+   같은 크기의 RGB565를 뽑습니다. 미리보기는 기기로 보낸 그 장입니다.
 4. device worker는 직전 프레임과 달라진 청크만 Vendor HID로 전송하고, 유지 전송과
    keep-alive로 펌웨어 기본 화면이 다시 나타나지 않게 합니다.
 5. 장치가 분리되면 HID 계층이 재연결을 시도하고, 준비가 끝나면 최신 화면과 설정을
@@ -135,7 +161,8 @@ XPAD Mini LCD가 최종 출력이며, 점선으로 표시된 오른쪽 영역만
 2. 앱은 장치의 기존 키 설정을 먼저 백업합니다.
 3. 선택한 슬롯만 F16~F18에 RAM 임시 매핑하고, 쓰기 직후 다시 읽어 성공 여부를
    확인합니다.
-4. 물리 키를 누르면 현재 프로필과 버튼 위치에 연결된 앱이 실행됩니다.
+4. 물리 키를 누르면 현재 프로필과 버튼 위치에 연결된 앱이 실행됩니다. P5에서는
+   같은 키가 YouTube 이전·재생·다음으로 갑니다.
 5. 기능을 끄거나 앱이 정상 종료되면 백업한 원본 키 설정으로 복원합니다.
 
 기획자는 이 그림에서 “설정 → 물리 키 사용 → 종료 시 원복”이라는 제품 흐름을,
@@ -176,6 +203,7 @@ XPAD Mini LCD가 최종 출력이며, 점선으로 표시된 오른쪽 영역만
 
 - XPAD Mini 전용이며 다른 키보드나 매크로패드는 지원하지 않습니다.
 - 음악 조회와 앨범아트 추출이 AppleScript 기반이어서 macOS에서만 동작합니다.
+  YouTube도 공식 watch 창을 쓰는 구조라 macOS Electron에서만 검증했습니다.
 - Apple notarization은 아직 완료하지 않았습니다.
 - P2~P5의 일반 키 설정은 조회·로컬 백업까지만 지원합니다. 안전한 전체 rollback이
   준비되지 않은 일반 키 장치 쓰기는 UI에서 차단합니다.

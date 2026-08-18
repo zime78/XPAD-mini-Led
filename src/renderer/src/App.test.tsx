@@ -63,6 +63,7 @@ const status: StatusSnapshot = {
   youtubeLcdActive: false,
   youtubeLcdDelayMs: null,
   youtubePlayback: null,
+  youtubeLibrary: createDefaultYoutubeLibrary(),
   youtubeAccount: EMPTY_YOUTUBE_ACCOUNT,
   knobFineVolumeState: 'active',
   knobFineVolumeError: null,
@@ -135,6 +136,7 @@ describe('XPAD Mini Now Playing 화면', () => {
       moveYoutubeVideo: vi.fn().mockImplementation(async () => ({ config, status })),
       playYoutubeVideo: vi.fn().mockImplementation(async () => ({ config, status })),
       controlYoutube: vi.fn().mockImplementation(async () => ({ config, status })),
+      seekYoutube: vi.fn().mockImplementation(async () => ({ config, status })),
       signInYoutube: vi.fn().mockImplementation(async () => ({ config, status })),
       signOutYoutube: vi.fn().mockImplementation(async () => ({ config, status })),
       refreshYoutubeAccount: vi.fn().mockImplementation(async () => ({ config, status })),
@@ -225,6 +227,16 @@ describe('XPAD Mini Now Playing 화면', () => {
         },
       },
     });
+    window.xpad.seekYoutube = vi.fn().mockResolvedValue({
+      config,
+      status: {
+        ...youtubeStatus,
+        youtubePlayback: {
+          ...youtubeStatus.youtubePlayback,
+          position: 90,
+        },
+      },
+    });
     render(<App />);
 
     const playerPanel = await screen.findByRole('region', { name: '이예준 피크닉버스킹' });
@@ -238,7 +250,14 @@ describe('XPAD Mini Now Playing 화면', () => {
     expect(within(playerPanel).getByText('이예준')).toBeTruthy();
     expect(within(playerPanel).getByText('1 / 1')).toBeTruthy();
     expect(within(playerPanel).getByText('0:12 / 3:00')).toBeTruthy();
-    expect(within(playerPanel).getByRole('progressbar', { name: '재생 위치' })).toBeTruthy();
+    const progress = within(playerPanel).getByRole('slider', { name: '재생 위치' });
+    expect(progress).toBeTruthy();
+    progress.getBoundingClientRect = () =>
+      ({ left: 0, width: 100, top: 0, height: 10, right: 100, bottom: 10, x: 0, y: 0, toJSON: () => undefined });
+    fireEvent.pointerDown(progress, { clientX: 20, button: 0, pointerId: 1 });
+    fireEvent.pointerMove(progress, { clientX: 50, pointerId: 1 });
+    fireEvent.pointerUp(progress, { clientX: 50, pointerId: 1 });
+    await waitFor(() => expect(window.xpad.seekYoutube).toHaveBeenCalledWith(90));
     expect(within(playerPanel).getByText('재생 중')).toBeTruthy();
     fireEvent.click(within(playerPanel).getByRole('button', { name: '목록 추가' }));
     fireEvent.change(within(playerPanel).getByLabelText('YouTube URL 또는 ID'), {
@@ -255,6 +274,74 @@ describe('XPAD Mini Now Playing 화면', () => {
 
     fireEvent.click(within(playerPanel).getByRole('button', { name: 'Profile 3' }));
     await waitFor(() => expect(window.xpad.switchKeyboardProfile).toHaveBeenCalledWith(3));
+  });
+
+  it('재생 창 목록리스트에서 영상을 선택하고 삭제한다', async () => {
+    const library = {
+      currentIndex: 0,
+      items: [
+        {
+          videoId: 'vCFfPqLVp0U',
+          title: '이예준 피크닉버스킹',
+          channel: '이예준',
+          addedAt: '2026-01-01T00:00:00.000Z',
+        },
+        {
+          videoId: 'abcdefghijk',
+          title: '두번째 영상',
+          channel: '채널B',
+          addedAt: '2026-01-02T00:00:00.000Z',
+        },
+      ],
+    };
+    const youtubeStatus: StatusSnapshot = {
+      ...status,
+      youtubeLcdActive: true,
+      youtubeLibrary: library,
+      youtubePlayback: {
+        videoId: 'vCFfPqLVp0U',
+        title: '이예준 피크닉버스킹',
+        channel: '이예준',
+        state: 'playing',
+        duration: 180,
+        position: 12,
+        signedIn: false,
+        adPlaying: false,
+        queueIndex: 0,
+        queueCount: 2,
+      },
+      keyboardProfileState: {
+        ...status.keyboardProfileState,
+        activeProfileId: 5,
+      },
+    };
+    window.xpad.getStatus = vi.fn().mockResolvedValue(youtubeStatus);
+    window.xpad.playYoutubeVideo = vi.fn().mockResolvedValue({
+      config: { ...config, youtubeLibrary: { ...library, currentIndex: 1 } },
+      status: {
+        ...youtubeStatus,
+        youtubeLibrary: { ...library, currentIndex: 1 },
+      },
+    });
+    window.xpad.removeYoutubeVideo = vi.fn().mockResolvedValue({
+      config: {
+        ...config,
+        youtubeLibrary: { items: [library.items[0]], currentIndex: 0 },
+      },
+      status: {
+        ...youtubeStatus,
+        youtubeLibrary: { items: [library.items[0]], currentIndex: 0 },
+      },
+    });
+    render(<App />);
+
+    const playerPanel = await screen.findByRole('region', { name: '이예준 피크닉버스킹' });
+    fireEvent.click(within(playerPanel).getByRole('button', { name: '목록리스트' }));
+    expect(within(playerPanel).getByText('두번째 영상')).toBeTruthy();
+    fireEvent.click(within(playerPanel).getByRole('button', { name: '두번째 영상 재생' }));
+    await waitFor(() => expect(window.xpad.playYoutubeVideo).toHaveBeenCalledWith(1));
+    fireEvent.click(within(playerPanel).getByRole('button', { name: '두번째 영상 삭제' }));
+    await waitFor(() => expect(window.xpad.removeYoutubeVideo).toHaveBeenCalledWith(1));
   });
 
   it('P5 메타가 없으면 기본 안내를 보여준다', async () => {

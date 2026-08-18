@@ -10,8 +10,8 @@
 | 대상 장치 | Pulsar Lab XPAD Mini |
 | 개발 위치 | 프로젝트 저장소 루트 |
 | 앱 식별자 | `kr.co.zime.xpad-mini-now-playing` |
-| 실기기 최종 확인일 | 2026-08-18 |
-| 문서·빌드 확인일 | 2026-08-18 |
+| 실기기 최종 확인일 | 2026-08-19 |
+| 문서·빌드 확인일 | 2026-08-19 |
 
 이 문서는 현재 저장소에 구현된 기능, 내부 구조, XPAD Mini 연결 방식, 빌드·서명·설치
 결과와 실기기 검증 범위를 기록한다. 저수준 명령의 전체 목록과 역공학 근거는
@@ -37,7 +37,7 @@ macOS에서 실행되는 데스크톱 앱이 Spotify 또는 Apple Music의 현�
 | 미세 볼륨 | XPAD 노브 한 칸을 실제 출력 단계 한 칸과 매칭, 클릭 Mute 유지 | 완료 |
 | 볼륨 피드백 | 조절 후 실제 출력값을 LCD·앱 미리보기에 표시하고 1.6초 뒤 곡 화면 복원 | 완료 |
 | 빠른 프로필 전환 | 재생 화면 P1~P5 버튼, 실제 RAM 프로필 선택·readback, 하단 3키 요약·로컬 라우터 동기화 | 완료 |
-| YouTube P5 | 로그인된 공식 watch. 소리/LCD 창 분리. HID×0.55 자동 캡처, 최신 1장만 전송. 베젤에 전송 간격 | 완료 |
+| YouTube P5 | 공식 watch 분리. HID×0.55 캡처, 최신 1장, 베젤 전송 간격. 목록·시크·loudness 핀·LCD 시계 맞춤 | 완료 |
 | 자동 복구 | 장치 분리 후 3초 간격 재연결 | 완료 |
 | 설정 화면 | 음악 표시 설정, 노브 미세 볼륨 활성화·단위, 로그인 실행 | 완료 |
 | 키보드 설정 | 독립 창, Profile 1 고정 음악 제어, Profile 2~5 하단 3버튼 실기기 조회·로컬 편집, 앱 실행, 사용자 백업 최대 10개 | 완료 |
@@ -204,15 +204,18 @@ readback으로 확인한다. 설정 비활성화와 정상 종료 때 출고 Vol
 [`src/renderer/src/components/player-view.tsx`](../src/renderer/src/components/player-view.tsx).
 구조 정본: [`docs/plan/youtube-p5/STRUCTURE_REVIEW.md`](./plan/youtube-p5/STRUCTURE_REVIEW.md).
 
-인증이 필수이므로 스트림을 앱이 직접 받아 재인코딩하지 않는다. Profile 5는 공식
-`youtube.com/watch`를 같은 파티션 `persist:youtube-lcd`로 연다. 숨은 창을 둘로 나눈다.
+인증이 필수이므로 스트림을 앱이 직접 받아 재인코딩하지 않는다. Premium 오프라인·로컬
+파일 재생도 쓰지 않는다. Profile 5는 공식 `youtube.com/watch`를 같은 파티션
+`persist:youtube-lcd`로 연다. 숨은 창을 둘로 나눈다.
 
-- 소리 창: 재생만 한다. `getImageData`와 `setPlaybackQuality`를 쓰지 않는다.
-- LCD 창: 음소거, `tiny`(144p) 고정. 캡처 주기는 `clamp(HID drawMs × 0.55, 40, 100)`이다. HID 실측 전에는 55ms. 뽑은 장의 약 45%는 워커가 최신 1장만 보내며 버린다. 1ms 고정은 쓰지 않는다(실측에서 ~96% 폐기).
-- 전송: 워커 `pumpLcd`가 한 장이 끝나는 즉시 대기 중인 최신 장을 보낸다. 기기 상한은 전체 장 기준 약 10fps(`hidDrawMs` 약 95–110ms). 전송 후 `lcdStats`로 `lastLcdDrawMs`를 갱신한다.
-- 앱 미리보기: 기기로 보낸 그 RGB565를 PNG로 복원해 같은 캡처 주기로 표시한다.
-- 베젤 우측 하단 숫자는 끝-끝 딜레이가 아니라 직전 HID 전송 간격(`youtubeLcdSendIntervalMs` / `StatusSnapshot.youtubeLcdDelayMs`)이다.
-- 위치가 1.5초 이상 벌어지면 LCD 창만 소리 창에 맞춘다. 이 오차는 베젤 숫자에 넣지 않는다. 광고 타이밍 차이는 허용한다.
+- 소리 창: 재생만 한다. `getImageData`와 `setPlaybackQuality`를 쓰지 않는다. 요소가 mute이거나 volume=0일 때만 되돌린다. YouTube loudness(예: 0.455, −6.83 dB)는 핀하고, 이후 커지는 게인(예: 0.775)은 핀으로 막는다. `player.setVolume`은 persist를 오염하므로 쓰지 않는다.
+- LCD 창: Chromium `webContents.setAudioMuted(true)`와 문서 요소 mute. `player.mute`/`setVolume(0)`은 쓰지 않는다. 화질은 `tiny`(144p). 캡처 주기는 `clamp(HID drawMs × 0.55, 40, 100)`이다. HID 실측 전에는 55ms. 뽑은 장의 약 45%는 워커가 최신 1장만 보내며 버린다.
+- 전송: 워커 `pumpLcd`가 한 장이 끝나는 즉시 대기 중인 최신 장을 보낸다. 기기 상한은 전체 장 기준 약 10fps(`hidDrawMs` 약 95–110ms).
+- 앱 미리보기: 기기로 보낸 그 RGB565를 PNG로 복원한다. 베젤 우측 하단은 직전 HID 전송 간격(`youtubeLcdSendIntervalMs` / `StatusSnapshot.youtubeLcdDelayMs`)이다.
+- 시계: 400ms마다 LCD를 맞춘다. 목표 시각 = 소리 위치 + HID 전송 시간(초). 허용 오차 60ms. 광고 중에는 맞추지 않는다. 두 창의 영상 ID가 다르면 LCD만 watch URL로 다시 연다.
+- 곡 전환: 이전 소리를 끊은 뒤 양쪽 창을 `watch?v=`로 다시 연다. `loadVideoById`는 숨은 소리 창에서 이전 곡이 남아 쓰지 않는다. 연타는 마지막 인덱스만 남긴다.
+- 이전 키: 첫 입력은 처음으로, 2.5초 안 두 번째면 이전 곡.
+- 재생 창: 진행 바 클릭·드래그 시크, `목록 추가`, `목록리스트`(선택·삭제). 목록은 `StatusSnapshot.youtubeLibrary`로 푸시한다. 순서 변경은 설정 창.
 
 ### 4.5 설정 화면과 트레이
 
@@ -575,7 +578,9 @@ renderer 공개 UI 동작은 Vitest와 Testing Library로 자동 검증한다. H
    쓰는 장치 적용은 일반 키 전체 rollback과 실기기 실패 경로 검증이 끝날 때까지 지원하지
    않는다.
 8. YouTube LCD는 HID 대역 때문에 전체 장 기준 약 10fps가 상한이다. 캡처를 더 빨리 해도
-   전송 간격은 줄지 않고 겹침(무시)만 커진다. 소리 창과 LCD 창 시각은 1.5초까지 어긋날 수 있다.
+   전송 간격은 줄지 않고 겹침(무시)만 커진다. 광고가 아니면 LCD는 소리+HID 리드와 60ms
+   넘게 벌어질 때 맞춘다. 곡 전환 때 watch 재로드로 짧은 공백이 있다. 광고 구간 창 간
+   타이밍 차이는 맞추지 않는다.
 
 ## 11. 관련 문서와 참고 자료
 

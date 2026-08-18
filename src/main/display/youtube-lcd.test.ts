@@ -32,10 +32,15 @@ import {
   mapYoutubePlayerInfo,
   parseYouTubeVideoId,
   preparePlayerScript,
+  STOP_MEDIA_SCRIPT,
   seekPlayerScript,
   shouldApplyYoutubeQuality,
   shouldPullYoutubeLcdFrame,
   shouldResetYoutubeVolume,
+  nextYoutubePinnedVolume,
+  shouldClampYoutubeVolumeUp,
+  shouldSeekYoutubeLcdClock,
+  youtubeLcdClockTarget,
   youtubeLoginCookiesPresent,
   YOUTUBE_QUALITY_PREF,
   youtubeSessionUserAgent,
@@ -201,12 +206,77 @@ describe('shouldApplyYoutubeQuality', () => {
   });
 });
 
+describe('youtubeLcdClockTarget', () => {
+  it('leads the audio clock by the last HID draw time', () => {
+    expect(youtubeLcdClockTarget(10, 100)).toBeCloseTo(10.1);
+    expect(youtubeLcdClockTarget(10, null)).toBeCloseTo(10.1);
+  });
+});
+
+describe('shouldSeekYoutubeLcdClock', () => {
+  it('seeks when the lcd window is off the audio clock plus HID lead', () => {
+    expect(
+      shouldSeekYoutubeLcdClock({
+        audioPosition: 10,
+        lcdPosition: 10,
+        audioAd: false,
+        lcdAd: false,
+        hidDrawMs: 100,
+      })
+    ).toBe(true);
+    expect(
+      shouldSeekYoutubeLcdClock({
+        audioPosition: 10,
+        lcdPosition: 10.1,
+        audioAd: false,
+        lcdAd: false,
+        hidDrawMs: 100,
+      })
+    ).toBe(false);
+  });
+
+  it('does not fight different ad timing', () => {
+    expect(
+      shouldSeekYoutubeLcdClock({
+        audioPosition: 10,
+        lcdPosition: 12,
+        audioAd: true,
+        lcdAd: false,
+      })
+    ).toBe(false);
+    expect(
+      shouldSeekYoutubeLcdClock({
+        audioPosition: 10,
+        lcdPosition: 12,
+        audioAd: false,
+        lcdAd: true,
+      })
+    ).toBe(false);
+  });
+});
+
 describe('shouldResetYoutubeVolume', () => {
-  it('resets only when the element is muted or not at full volume', () => {
+  it('resets only when the element is muted or at zero', () => {
     expect(shouldResetYoutubeVolume(false, 1)).toBe(false);
     expect(shouldResetYoutubeVolume(false, 0.995)).toBe(false);
+    expect(shouldResetYoutubeVolume(false, 0.45551219141001703)).toBe(false);
     expect(shouldResetYoutubeVolume(true, 1)).toBe(true);
-    expect(shouldResetYoutubeVolume(false, 0.4)).toBe(true);
+    expect(shouldResetYoutubeVolume(false, 0)).toBe(true);
+    expect(shouldResetYoutubeVolume(false, Number.NaN)).toBe(true);
+  });
+});
+
+describe('youtube volume pin', () => {
+  it('lowers the pin when loudness is quieter and clamps later increases', () => {
+    expect(nextYoutubePinnedVolume(null, 1)).toBe(1);
+    expect(nextYoutubePinnedVolume(1, 0.45551219141001703)).toBe(0.45551219141001703);
+    expect(nextYoutubePinnedVolume(0.45551219141001703, 0.7753539433595975)).toBe(
+      0.45551219141001703
+    );
+    expect(nextYoutubePinnedVolume(0.45551219141001703, 0)).toBe(0.45551219141001703);
+    expect(shouldClampYoutubeVolumeUp(0.45551219141001703, 0.7753539433595975)).toBe(true);
+    expect(shouldClampYoutubeVolumeUp(0.45551219141001703, 0.45551219141001703)).toBe(false);
+    expect(shouldClampYoutubeVolumeUp(null, 0.7753539433595975)).toBe(false);
   });
 });
 
@@ -271,15 +341,22 @@ describe('preparePlayerScript', () => {
     expect(audio).toContain('const lcd = false');
     expect(audio).toContain('if (video && lcd)');
     expect(audio).toContain('if (player && lcd)');
-    expect(audio).toContain('video.muted || !(video.volume >= 0.99)');
+    expect(audio).toContain('if (video.muted)');
+    expect(audio).toContain('vol <= 0');
+    expect(audio).toContain('__xpadPinnedVolume');
+    expect(audio).toContain('vol > pinned');
+    expect(audio).not.toContain('video.volume >= 0.99');
   });
 
   it('mutes the lcd window and pins tiny quality there only', () => {
     const lcd = preparePlayerScript(true, 'lcd');
     expect(lcd).toContain('const lcd = true');
     expect(lcd).toContain('__xpadQualityPinned');
-    expect(lcd).toContain('video.muted = true');
-    expect(lcd).toContain('video.volume = 0');
+    expect(lcd).toContain('media.muted = true');
+    expect(lcd).toContain('media.volume = 0');
+    expect(lcd).toContain("querySelectorAll('video, audio')");
+    expect(lcd).not.toContain('player.mute()');
+    expect(lcd).not.toContain('setVolume(0)');
     expect(lcd).toContain('xpad-video-only');
   });
 });
@@ -296,6 +373,14 @@ describe('watchUrl', () => {
     expect(watchUrl(SAMPLE_YOUTUBE_VIDEO_ID)).toBe(
       `https://www.youtube.com/watch?v=${SAMPLE_YOUTUBE_VIDEO_ID}&autoplay=1&vq=tiny`
     );
+  });
+});
+
+describe('STOP_MEDIA_SCRIPT', () => {
+  it('pauses media and stops the watch player before a track change', () => {
+    expect(STOP_MEDIA_SCRIPT).toContain('media.pause()');
+    expect(STOP_MEDIA_SCRIPT).toContain('stopVideo');
+    expect(STOP_MEDIA_SCRIPT).not.toContain('loadVideoById');
   });
 });
 

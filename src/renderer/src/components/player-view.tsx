@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   KEYBOARD_SLOTS,
   YOUTUBE_PROFILE_ID,
@@ -21,6 +21,7 @@ import {
   youtubePlaybackTimeLabel,
   youtubePlaybackTitle,
   youtubeLcdDelayLabel,
+  seekSecondsFromClientX,
 } from '../youtube-playback-label';
 import { PlayerStatus } from './player-status';
 import { QuickProfileSwitch } from './quick-profile-switch';
@@ -50,6 +51,9 @@ type PlayerViewProps = {
   onRunAction: (slot: KeyboardSlot) => void;
   onReconnect: () => void;
   onAddYoutube: (input: string) => Promise<void>;
+  onPlayYoutube?: (index: number) => Promise<void>;
+  onRemoveYoutube?: (index: number) => Promise<void>;
+  onSeekYoutube?: (seconds: number) => Promise<void>;
 };
 
 export function PlayerView({
@@ -65,18 +69,34 @@ export function PlayerView({
   onRunAction,
   onReconnect,
   onAddYoutube,
+  onPlayYoutube,
+  onRemoveYoutube,
+  onSeekYoutube,
 }: PlayerViewProps) {
   const track = status.track;
   const mini = viewMode === 'mini';
   const [adding, setAdding] = useState(false);
+  const [listing, setListing] = useState(false);
   const [addDraft, setAddDraft] = useState('');
   const [addBusy, setAddBusy] = useState(false);
+  const [listBusy, setListBusy] = useState(false);
   const [addError, setAddError] = useState('');
   const [addMessage, setAddMessage] = useState('');
+  const library = status.youtubeLibrary;
+  const [dragSeekSeconds, setDragSeekSeconds] = useState<number | null>(null);
+  const draggingSeek = useRef(false);
   const youtubeTitle = youtubePlaybackTitle(status.youtubePlayback);
   const youtubeQueue = youtubePlaybackQueueLabel(status.youtubePlayback);
-  const youtubeTime = youtubePlaybackTimeLabel(status.youtubePlayback);
-  const youtubeProgress = youtubePlaybackProgress(status.youtubePlayback);
+  const youtubeTime = youtubePlaybackTimeLabel(
+    dragSeekSeconds != null && status.youtubePlayback
+      ? { ...status.youtubePlayback, position: dragSeekSeconds }
+      : status.youtubePlayback
+  );
+  const youtubeProgress = youtubePlaybackProgress(
+    dragSeekSeconds != null && status.youtubePlayback
+      ? { ...status.youtubePlayback, position: dragSeekSeconds }
+      : status.youtubePlayback
+  );
   const delayLabel = status.youtubeLcdActive
     ? youtubeLcdDelayLabel(status.youtubeLcdDelayMs)
     : null;
@@ -102,6 +122,36 @@ export function PlayerView({
       setAddError(error instanceof Error ? error.message : String(error));
     } finally {
       setAddBusy(false);
+    }
+  };
+
+  /** 목록에서 고른 영상을 재생한다. */
+  const playYoutubeItem = async (index: number) => {
+    if (!onPlayYoutube || listBusy) return;
+    setListBusy(true);
+    setAddError('');
+    try {
+      await onPlayYoutube(index);
+    } catch (error) {
+      setAddError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setListBusy(false);
+    }
+  };
+
+  /** 목록에서 해당 영상을 뺀다. */
+  const removeYoutubeItem = async (index: number) => {
+    if (!onRemoveYoutube || listBusy) return;
+    setListBusy(true);
+    setAddError('');
+    try {
+      await onRemoveYoutube(index);
+      setAddMessage('목록에서 삭제했습니다.');
+      setTimeout(() => setAddMessage(''), 2000);
+    } catch (error) {
+      setAddError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setListBusy(false);
     }
   };
 
@@ -196,19 +246,72 @@ export function PlayerView({
                 <div className="youtube-badge-row">
                   <span className="badge youtube">YouTube</span>
                   {showYoutubeAdd && (
-                    <button
-                      type="button"
-                      className="youtube-add-toggle"
-                      aria-expanded={adding}
-                      onClick={() => {
-                        setAdding((open) => !open);
-                        setAddError('');
-                      }}
-                    >
-                      {adding ? '닫기' : '목록 추가'}
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        className="youtube-add-toggle"
+                        aria-expanded={adding}
+                        onClick={() => {
+                          setAdding((open) => !open);
+                          setListing(false);
+                          setAddError('');
+                        }}
+                      >
+                        {adding ? '닫기' : '목록 추가'}
+                      </button>
+                      <button
+                        type="button"
+                        className="youtube-add-toggle"
+                        aria-expanded={listing}
+                        onClick={() => {
+                          setListing((open) => !open);
+                          setAdding(false);
+                          setAddError('');
+                        }}
+                      >
+                        {listing ? '닫기' : '목록리스트'}
+                      </button>
+                    </>
                   )}
                 </div>
+                {listing && (
+                  <div className="youtube-library-inline" aria-label="YouTube 목록">
+                    {library.items.length === 0 ? (
+                      <p className="youtube-library-empty">추가한 영상이 없습니다.</p>
+                    ) : (
+                      <ul className="youtube-library-inline-list">
+                        {library.items.map((item, index) => {
+                          const current = index === library.currentIndex;
+                          const label = item.title.trim() || item.videoId;
+                          return (
+                            <li key={item.videoId} className={current ? 'is-current' : undefined}>
+                              <button
+                                type="button"
+                                className="youtube-library-play"
+                                disabled={listBusy}
+                                aria-label={`${label} 재생`}
+                                aria-current={current ? 'true' : undefined}
+                                onClick={() => void playYoutubeItem(index)}
+                              >
+                                <strong>{label}</strong>
+                                <small>{item.channel.trim() || '채널 정보 없음'}</small>
+                              </button>
+                              <button
+                                type="button"
+                                className="youtube-library-delete"
+                                disabled={listBusy}
+                                aria-label={`${label} 삭제`}
+                                onClick={() => void removeYoutubeItem(index)}
+                              >
+                                삭제
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </div>
+                )}
                 {adding && (
                   <form
                     className="youtube-add-inline"
@@ -248,11 +351,63 @@ export function PlayerView({
                     {youtubeProgress !== null && (
                       <div
                         className="youtube-progress-bar"
-                        role="progressbar"
+                        role="slider"
                         aria-label="재생 위치"
                         aria-valuemin={0}
                         aria-valuemax={100}
                         aria-valuenow={Math.round(youtubeProgress)}
+                        aria-valuetext={youtubeTime ?? undefined}
+                        onPointerDown={(event) => {
+                          if (!onSeekYoutube || event.button !== 0) return;
+                          event.currentTarget.setPointerCapture?.(event.pointerId);
+                          const duration = status.youtubePlayback?.duration ?? 0;
+                          const rect = event.currentTarget.getBoundingClientRect();
+                          const seconds = seekSecondsFromClientX(
+                            event.clientX,
+                            rect.left,
+                            rect.width,
+                            duration
+                          );
+                          if (seconds == null) return;
+                          draggingSeek.current = true;
+                          setDragSeekSeconds(seconds);
+                        }}
+                        onPointerMove={(event) => {
+                          if (!draggingSeek.current) return;
+                          const duration = status.youtubePlayback?.duration ?? 0;
+                          const rect = event.currentTarget.getBoundingClientRect();
+                          const seconds = seekSecondsFromClientX(
+                            event.clientX,
+                            rect.left,
+                            rect.width,
+                            duration
+                          );
+                          if (seconds == null) return;
+                          setDragSeekSeconds(seconds);
+                        }}
+                        onPointerUp={(event) => {
+                          if (!draggingSeek.current || !onSeekYoutube) return;
+                          const duration = status.youtubePlayback?.duration ?? 0;
+                          const rect = event.currentTarget.getBoundingClientRect();
+                          const seconds =
+                            seekSecondsFromClientX(
+                              event.clientX,
+                              rect.left,
+                              rect.width,
+                              duration
+                            ) ?? dragSeekSeconds;
+                          draggingSeek.current = false;
+                          setDragSeekSeconds(null);
+                          if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+                            event.currentTarget.releasePointerCapture?.(event.pointerId);
+                          }
+                          if (seconds == null) return;
+                          void onSeekYoutube(seconds);
+                        }}
+                        onPointerCancel={() => {
+                          draggingSeek.current = false;
+                          setDragSeekSeconds(null);
+                        }}
                       >
                         <span style={{ width: `${youtubeProgress}%` }} />
                       </div>

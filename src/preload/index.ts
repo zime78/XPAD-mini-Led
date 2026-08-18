@@ -77,6 +77,8 @@ const api = {
     ipcRenderer.invoke('youtube-library-play', index),
   controlYoutube: (command: YoutubeTransportCommand): Promise<YoutubeCommandResult> =>
     ipcRenderer.invoke('youtube-control', command),
+  seekYoutube: (seconds: number): Promise<YoutubeCommandResult> =>
+    ipcRenderer.invoke('youtube-seek', seconds),
   signInYoutube: (): Promise<YoutubeCommandResult> => ipcRenderer.invoke('youtube-sign-in'),
   signOutYoutube: (): Promise<YoutubeCommandResult> => ipcRenderer.invoke('youtube-sign-out'),
   refreshYoutubeAccount: (): Promise<YoutubeCommandResult> =>

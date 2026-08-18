@@ -18,6 +18,7 @@
 - [YouTube P5 구조](./plan/youtube-p5/STRUCTURE_REVIEW.md)
   - 로그인된 공식 watch, 소리 창과 음소거 LCD 창 분리
   - HID×0.55 자동 캡처, 최신 1장만 전송, 베젤에 전송 간격
+  - 목록·시크, loudness 핀, 곡 전환 watch 재로드, LCD 시계(소리+HID 리드)
   - 기기·미리보기 동일 RGB565, 단계 그림 [`diagrams/youtube-pipeline.html`](./diagrams/youtube-pipeline.html)
 - [현재 개발 내용 및 검증 보고서](./DEVELOPMENT_REPORT.md)
   - Spotify/Apple Music 음악 정보 조회 구현

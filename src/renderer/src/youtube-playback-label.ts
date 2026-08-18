@@ -49,3 +49,20 @@ export function youtubePlaybackProgress(info: YoutubePlaybackInfo | null): numbe
   if (!info || info.duration <= 0) return null;
   return Math.min(100, Math.max(0, (info.position / info.duration) * 100));
 }
+
+/** 진행 바 클릭 비율(0–1)을 초로 바꾼다. */
+export function seekRatioToSeconds(ratio: number, duration: number): number | null {
+  if (!Number.isFinite(ratio) || !Number.isFinite(duration) || duration <= 0) return null;
+  return Math.min(duration, Math.max(0, ratio * duration));
+}
+
+/** 진행 바 위 포인터 X로 이동할 초를 구한다. */
+export function seekSecondsFromClientX(
+  clientX: number,
+  barLeft: number,
+  barWidth: number,
+  duration: number
+): number | null {
+  const ratio = barWidth > 0 ? (clientX - barLeft) / barWidth : 0;
+  return seekRatioToSeconds(ratio, duration);
+}

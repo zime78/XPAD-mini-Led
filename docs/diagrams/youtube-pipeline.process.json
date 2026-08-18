@@ -89,8 +89,10 @@
   "notes": [
     "같은 persist:youtube-lcd 세션으로 소리 창과 음소거 LCD 창을 나눈다.",
     "getImageData 와 setPlaybackQuality 는 LCD 창만. 소리 창은 재생만 한다.",
+    "LCD 는 Chromium setAudioMuted. player.mute/setVolume 은 persist 오염으로 쓰지 않는다.",
     "미리보기는 기기로 보낸 RGB565 를 PNG 로 복원한다. 베젤 숫자는 직전 HID 전송 간격이다.",
     "캡처 주기는 HID drawMs×0.55 (40–100ms). 워커는 최신 1장만 보내고 lcdStats 로 주기를 맞춘다.",
+    "LCD 시계는 400ms, 목표=소리+HID 리드, 허용 60ms. 곡 전환은 양쪽 watch URL 재로드.",
     "hwdecode=on 은 로그 라벨이다. 앱이 VideoToolbox 를 직접 호출하지 않는다."
   ]
 }

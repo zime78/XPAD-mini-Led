@@ -1,6 +1,6 @@
 # XPAD Mini Now Playing
 
-macOS의 Spotify와 Apple Music 재생 정보를 읽어 Pulsar Lab XPAD Mini의 240×135 LCD에 표시하고, P1~P5 프로필과 하단 3키를 음악 제어·앱 실행에 연결하는 Electron 트레이 앱입니다.
+macOS의 Spotify와 Apple Music 재생 정보를 읽어 Pulsar Lab XPAD Mini의 240×135 LCD에 표시하고, P1~P5 프로필과 하단 3키를 음악 제어·앱 실행·YouTube(P5)에 연결하는 Electron 트레이 앱입니다.
 
 > ⚠️ **필수 기기 — [Pulsar Lab XPAD Mini](https://www.pulsar.gg/products/pulsar-lab-xpad-mini-gaming-key-pad) 실기기가 반드시 필요합니다.** 실제 LCD 출력, P1~P5 프로필 전환, 물리 키와 노브 기능은 기기를 USB로 연결해야 사용할 수 있습니다. VID `0x3710` / PID `0x2507`과 240×135 LCD에 맞춘 전용 앱이므로 다른 키보드·매크로패드·XPAD 모델은 지원하지 않습니다.
 >
@@ -25,10 +25,11 @@ macOS의 Spotify와 Apple Music 재생 정보를 읽어 Pulsar Lab XPAD Mini의 
 ## 이 앱이 하는 일
 
 - Spotify / Apple Music을 자동 감지해 곡명·아티스트·앨범·앨범아트·재생 상태·진행률을 표시합니다.
-- 화면과 동일한 240×135 프레임을 XPAD Mini LCD에 약 220ms 간격으로 유지 전송합니다.
+- Profile 5에서는 로그인한 공식 YouTube watch를 LCD에 보내고, 재생 창에서 목록·시크·이전/다음을 다룹니다.
+- 화면과 동일한 240×135 프레임을 XPAD Mini LCD에 약 220ms 간격으로 유지 전송합니다. YouTube는 최신 1장만 보내며 주기는 HID 전송에 맞춥니다.
 - 확장뷰에서는 음악 정보, 장치 상태, P1~P5와 현재 프로필의 하단 3키 동작을 한눈에 봅니다.
 - 미니뷰에서는 실제 LCD 프레임과 자주 쓰는 3키·키보드 설정·일반 설정만 작게 유지합니다.
-- P1은 이전 곡·재생/일시정지·다음 곡으로 고정하고, P2~P5의 하단 3키에는 앱 실행 동작을 연결할 수 있습니다.
+- P1은 이전 곡·재생/일시정지·다음 곡으로 고정하고, P2~P4 하단 3키에는 앱 실행을 연결할 수 있습니다. P5는 YouTube 이전·재생/일시정지·다음입니다.
 - XPAD 노브 한 칸을 macOS 실제 출력 단계에 맞춘 미세 볼륨으로 사용하고, 조절 결과를 LCD와 미리보기에 표시합니다.
 - 장치 분리·재연결, 앱 로그인 시 실행, 키 설정 사용자 백업을 지원합니다.
 
@@ -51,7 +52,7 @@ macOS의 Spotify와 Apple Music 재생 정보를 읽어 Pulsar Lab XPAD Mini의 
   <img src="docs/images/screenshots/settings.png" alt="XPAD Mini Now Playing 일반 설정 화면" width="760">
 </p>
 
-일반 설정에서 우선 음악 앱, 확인 주기, 앨범아트·진행률 표시, 로그인 시 자동 실행, XPAD 노브 미세 볼륨을 관리합니다. 상단 상태 카드로 USB 연결, LCD 프로토콜, 노브 적용 여부를 즉시 확인할 수 있습니다.
+일반 설정에서 우선 음악 앱, 확인 주기, 앨범아트·진행률 표시, 로그인 시 자동 실행, XPAD 노브 미세 볼륨을 관리합니다. 상단에서 YouTube 계정 연결과 재생 목록을 다루고, 상태 카드로 USB 연결, LCD 프로토콜, 노브 적용 여부를 확인합니다.
 
 ### 키보드 설정
 
@@ -59,7 +60,7 @@ macOS의 Spotify와 Apple Music 재생 정보를 읽어 Pulsar Lab XPAD Mini의 
   <img src="docs/images/screenshots/keyboard-settings.png" alt="XPAD Mini 키보드 설정 화면" width="1080">
 </p>
 
-키보드 설정은 장치에서 P2~P5의 하단 3키를 읽어 프로필별로 보여줍니다. 앱 실행을 선택하면 `.app` 절대 경로와 아이콘을 저장하고 해당 슬롯만 F16~F18로 임시 연결합니다. 설정은 이름·설명과 함께 최대 10개까지 로컬 백업할 수 있습니다.
+키보드 설정은 장치에서 P2~P5의 하단 3키를 읽어 프로필별로 보여줍니다. 앱 실행을 선택하면 `.app` 절대 경로와 아이콘을 저장하고 해당 슬롯만 F16~F18로 임시 연결합니다. Profile 5는 YouTube 전송으로 고정됩니다. 설정은 이름·설명과 함께 최대 10개까지 로컬 백업할 수 있습니다.
 
 ## 샘플 음악과 앨범아트
 
@@ -79,9 +80,47 @@ macOS의 Spotify와 Apple Music 재생 정보를 읽어 Pulsar Lab XPAD Mini의 
 
 1. `NowPlayingMonitor`가 실행 중인 Spotify와 Music을 확인하고 AppleScript로 재생 정보를 읽습니다. 기본 확인 주기는 1.5초입니다.
 2. Electron main 프로세스가 최신 `TrackInfo`만 렌더 큐에 남기고 설정 UI·미리보기·장치 워커에 같은 상태를 전달합니다.
-3. 음악 모드에서는 숨김 offscreen 창이 240×135 Canvas에 직접 그린 뒤 LCD용 RGB565 little-endian 64,800바이트 프레임으로 변환합니다. YouTube(P5)는 같은 로그인 세션의 소리 창에서 재생하고, 음소거 LCD 창에서만 HID 전송 시간의 55%(40–100ms)마다 픽셀을 뽑아 RGB565로 바꿉니다. 워커는 최신 1장만 기기로 보냅니다. 앱 미리보기는 그 RGB565를 PNG로 복원하고, 베젤에 직전 전송 간격(ms)을 보여 줍니다.
+3. 음악 모드에서는 숨김 offscreen 창이 240×135 Canvas에 직접 그린 뒤 LCD용 RGB565 little-endian 64,800바이트 프레임으로 변환합니다. YouTube(P5)는 같은 로그인 세션의 소리 창에서 재생하고, 음소거 LCD 창에서만 HID 전송 시간의 55%(40–100ms)마다 픽셀을 뽑아 RGB565로 바꿉니다. 워커는 최신 1장만 기기로 보냅니다. LCD는 소리 시각에 전송 시간을 더한 목표로 400ms마다 맞춥니다. 앱 미리보기는 그 RGB565를 PNG로 복원하고, 베젤에 직전 전송 간격(ms)을 보여 줍니다.
 4. device worker가 직전 프레임과 다른 청크만 Vendor HID로 전송하고, 220ms 재전송과 keep-alive로 펌웨어 기본 화면이 다시 나타나지 않게 합니다.
 5. XPAD Mini가 분리되면 HID 계층이 3초 간격으로 재연결을 시도하고, 준비가 끝나면 최신 프레임과 설정을 다시 적용합니다.
+
+## YouTube (Profile 5)
+
+로그인된 공식 `youtube.com/watch`만 사용합니다. 스트림을 받아 재인코딩하거나 로컬 파일로 저장하지 않습니다. 광고는 YouTube Premium과 앱 세션 로그인이 담당합니다.
+
+기기는 동영상 파일이 아니라 240×135 RGB565만 받습니다. 화면을 찍는 작업이 소리 나는 창에서 돌면 재생이 끊겨, 같은 로그인으로 소리 창과 LCD 창을 나눕니다. 초보자 안내와 설계 이유는 [`share/xpad-mini-now-playing/YOUTUBE.md`](share/xpad-mini-now-playing/YOUTUBE.md)에 있습니다.
+
+[인터랙티브 처리 워크플로](docs/diagrams/youtube-pipeline.html) · [현재 구조](docs/plan/youtube-p5/STRUCTURE_REVIEW.md) · [기능 계획](docs/plan/youtube-p5/PLAN.md)
+
+<p align="center">
+  <img src="docs/images/screenshots/player-youtube-p5.png" alt="P5 YouTube 재생 창" width="900">
+</p>
+
+<p align="center">
+  <img src="docs/images/diagrams/youtube-pipeline.png" alt="YouTube LCD 처리 워크플로" width="1100">
+</p>
+
+[확대 가능한 SVG](docs/images/diagrams/youtube-pipeline.svg) · [인터랙티브 HTML](docs/diagrams/youtube-pipeline.html)
+
+같은 Google 로그인 파티션 `persist:youtube-lcd`로 숨은 창을 둘로 나눕니다.
+
+| 단계 | 누가 | 하는 일 |
+| --- | --- | --- |
+| LOAD | Electron main | 소리 창과 LCD 창에 같은 `watch?v=…&vq=tiny`를 연다 |
+| DECODE | 각 Chromium renderer | YouTube MSE가 디코드한다. 앱은 디코더 API를 열지 않는다 |
+| PLAY | 소리 창 | 스피커로만 나간다. `getImageData`·화질 고정 없음 |
+| TAP | LCD 창만 | Chromium 음소거 후 HID 전송 ms×0.55(40–100ms)마다 240×135를 뽑는다 |
+| ENCODE | Electron main | RGBA → RGB565-LE 64,800바이트. 미리보기는 같은 버퍼를 PNG로 복원한다 |
+| SEND | Device worker | `0x25` 최신 1장만. 베젤 숫자는 직전 전송 간격(ms) |
+
+추가로 현재 코드가 하는 일은 다음과 같습니다.
+
+- 재생 창 `목록 추가`로 URL/ID를 넣고, `목록리스트`에서 선택·삭제합니다. 순서 변경은 설정 창입니다. 목록은 `config.youtubeLibrary`와 `StatusSnapshot.youtubeLibrary`입니다.
+- 진행 바를 클릭하거나 끌면 양쪽 창을 같은 시각으로 옮깁니다.
+- 이전 키는 한 번이면 처음으로, 2.5초 안 두 번째면 이전 곡입니다. 곡을 바꾸면 두 창 모두 watch URL을 다시 엽니다. `loadVideoById`는 쓰지 않습니다.
+- LCD는 `webContents.setAudioMuted`와 요소 mute만 씁니다. `player.mute`/`setVolume`은 persist에 저장되어 소리 창을 오염합니다.
+- 소리 창은 mute/0만 되돌리고 YouTube loudness는 그대로 둡니다. 이후 게인이 커지면 핀으로 막습니다.
+- LCD 시계는 400ms마다 맞춥니다. 목표 = 소리 시각 + HID 전송 시간, 허용 60ms. 영상 ID가 다르면 LCD만 다시 엽니다. 광고 중에는 맞추지 않습니다.
 
 ## 키 매핑은 어떻게 동작하나
 
@@ -90,7 +129,8 @@ macOS의 Spotify와 Apple Music 재생 정보를 읽어 Pulsar Lab XPAD Mini의 
 | 프로필 | 왼쪽 | 가운데 | 오른쪽 | 정책 |
 | --- | --- | --- | --- | --- |
 | P1 | 이전 곡 | 재생/일시정지 | 다음 곡 | 음악 제어 고정, 편집 불가 |
-| P2~P5 | 장치에서 읽은 키 또는 앱 실행 | 장치에서 읽은 키 또는 앱 실행 | 장치에서 읽은 키 또는 앱 실행 | 프로필별 하단 3키만 관리 |
+| P2~P4 | 장치에서 읽은 키 또는 앱 실행 | 장치에서 읽은 키 또는 앱 실행 | 장치에서 읽은 키 또는 앱 실행 | 프로필별 하단 3키만 관리 |
+| P5 | 이전 | 재생/일시정지 | 다음 | YouTube 고정. 이전은 처음→이전 곡 |
 
 현재 일반 키 선택은 로컬 설정·백업에 보존되며, 실제 장치의 일반 키를 새 값으로 덮어쓰지는 않습니다. 미디어 키는 테스트할 수 있고, 앱 실행 슬롯은 아래의 안전한 F16~F18 라우팅으로 실제 동작합니다.
 
@@ -109,13 +149,14 @@ macOS의 Spotify와 Apple Music 재생 정보를 읽어 Pulsar Lab XPAD Mini의 
 5. 물리 키를 누르면 XPAD의 일반 키보드 HID가 macOS에 F16~F18을 보냅니다. `KeyActionRouter`는 현재 활성 프로필의 해당 슬롯을 찾고 `shell.openPath()`로 저장된 앱을 실행합니다.
 6. 설정을 해제하거나 앱이 정상 종료되면 저장한 56바이트 원본을 복원합니다. 장치 Save 명령은 사용하지 않습니다.
 
-예를 들어 P2 왼쪽에 Discord를 지정하면 `P2 왼쪽 키 → F16 → P2/왼쪽 동작 조회 → /Applications/Discord.app 실행` 순서로 처리됩니다. P3 왼쪽도 같은 F16을 사용하지만, 현재 활성 프로필이 P3이면 P3에 저장한 동작이 실행됩니다.
+예를 들어 P2 왼쪽에 Discord를 지정하면 `P2 왼쪽 키 → F16 → P2/왼쪽 동작 조회 → /Applications/Discord.app 실행` 순서로 처리됩니다. P3 왼쪽도 같은 F16을 사용하지만, 현재 활성 프로필이 P3이면 P3에 저장한 동작이 실행됩니다. P5가 활성이면 같은 F16~F18이 YouTube 이전·재생/일시정지·다음으로 갑니다.
 
 ## 기기 ↔ 앱 통신 방법
 
 | 방향 | 채널 / 명령 | 전달 내용 | 용도 |
 | --- | --- | --- | --- |
 | Spotify·Music → 앱 | `pgrep` + `osascript` | 곡명, 아티스트, 앨범, 시간, 상태, 앨범아트 | 현재 재생 정보 수집 |
+| YouTube watch → 앱 | `persist:youtube-lcd` 숨은 창 2개 | 소리, 240×135 RGB565, 재생 위치 | P5 LCD·미리보기 |
 | Main → device worker | Node worker message | RGB565 프레임, 프로필·노브·키 설정 | UI와 HID I/O 분리 |
 | 앱 ↔ XPAD | Vendor HID usage page `0xFF12`, usage `0x02`, report ID `0x22` | 1024바이트 패킷 + 16비트 체크섬 | 장치 전용 bulk 통신 |
 | 앱 ↔ XPAD | `0x02` ScreenInfo/SystemInfo | 240×135 정보, 활성 프로필, `cfg_selection` | 준비 확인·P1~P5 RAM 전환·readback |
@@ -139,11 +180,11 @@ macOS의 Spotify와 Apple Music 재생 정보를 읽어 Pulsar Lab XPAD Mini의 
 ## 필수 환경
 
 - macOS
-- Spotify 또는 Apple Music
+- Spotify 또는 Apple Music. YouTube(P5)는 앱이 연 Google 로그인 창과, 광고 없이 보려면 Premium
 - Pulsar Lab XPAD Mini — VID `0x3710`, PID `0x2507`
 - LCD 240×135, RGB565 little-endian
 
-장치가 없어도 `./build.sh dev-ui`로 설정 UI와 음악 조회를 실행할 수 있습니다. 실제 LCD·프로필·키·노브 기능은 USB로 연결된 XPAD Mini가 필요합니다.
+장치가 없어도 `./build.sh dev-ui`로 설정 UI와 음악 조회를 실행할 수 있습니다. 실제 LCD·프로필·키·노브 기능은 USB로 연결된 XPAD Mini가 필요합니다. YouTube LCD도 같은 기기가 있어야 화면에 나갑니다.
 
 ### 지원 기기: Pulsar Lab XPAD Mini
 
@@ -182,7 +223,7 @@ macOS의 Spotify와 Apple Music 재생 정보를 읽어 Pulsar Lab XPAD Mini의 
 
 `src/main/` 또는 device worker를 수정한 뒤에는 dev 프로세스를 재시작해야 합니다. 실제 HID 개발 전에는 설치 앱을 `./build.sh stop`으로 종료해 한 프로세스만 장치를 사용하게 하십시오.
 
-XPAD 노브 입력 진단 로그는 `~/Library/Application Support/xpad-mini-now-playing/logs/fine-volume.jsonl`에 기록됩니다. 노브 방향·요청 단위·조절 전후 볼륨·처리 시간만 저장하고, 곡 정보나 장치 식별자는 기록하지 않습니다. 1MiB를 넘으면 이전 로그 한 개로 회전합니다.
+진단 로그는 `~/Library/Application Support/xpad-mini-now-playing/logs/fine-volume.jsonl`에 기록됩니다. 노브 방향·요청 단위·조절 전후 볼륨과 YouTube 화질·요소 볼륨·광고 전환(`youtube-audio`)만 저장하고, 곡 정보나 장치 식별자는 기록하지 않습니다. 1MiB를 넘으면 이전 로그 한 개로 회전합니다.
 
 ## 프로젝트 워크트리
 
@@ -202,32 +243,40 @@ git에 커밋되는 핵심 파일 기준입니다. 생성물 `out/`, `dist/`, `n
 │  ├─ DEVELOPMENT_REPORT.md         # 구현·검증·운영 종합 보고서
 │  ├─ PROTOCOL.md                   # 실기기 검증 HID 프로토콜 권위 문서
 │  ├─ XPAD_MINI_DIRECT_API.md       # 전체 명령과 위험도 지도
-│  ├─ diagrams/                     # 동작·키 매핑 인터랙티브 HTML과 소스 JSON
+│  ├─ diagrams/
+│  │  ├─ runtime-architecture.html  # 프로세스·워커·HID 흐름
+│  │  ├─ key-mapping.html           # F16–F20 키 매핑
+│  │  └─ youtube-pipeline.html      # YouTube 소리/LCD 분리·캡처·시계 맞춤
 │  ├─ images/
 │  │  ├─ screenshots/               # 실제 앱 화면 4종과 AI 앨범 합성 문서 뷰
 │  │  ├─ diagrams/                  # README용 PNG/SVG 흐름도
 │  │  └─ samples/                   # AI 생성 가상 앨범아트
-│  └─ plan/                         # 기능별 설계·구현 기록
+│  └─ plan/
+│     ├─ keyboard-settings/         # 키보드 설정·백업
+│     ├─ profile-quick-switch/      # P1~P5 단축 전환
+│     └─ youtube-p5/                # YouTube 구조 정본·기능 계획
 ├─ src/
-│  ├─ shared/types.ts               # IPC·설정·트랙·키 매핑 공용 계약
+│  ├─ shared/types.ts               # IPC·설정·트랙·키 매핑·YouTube 목록 공용 계약
 │  ├─ main/
-│  │  ├─ index.ts                   # 앱 수명 주기·창·IPC·렌더·프로필 오케스트레이션
+│  │  ├─ index.ts                   # 앱 수명 주기·창·IPC·렌더·프로필·YouTube 오케스트레이션
 │  │  ├─ config.ts                  # userData/config.json 로드·정규화·저장
+│  │  ├─ diagnostic-log.ts          # fine-volume.jsonl · youtube-audio
 │  │  ├─ keyboard-settings.ts       # 키 설정 검증·장치 readback 병합
 │  │  ├─ keyboard-backups.ts        # P2~P5 사용자 백업 최대 10개
 │  │  ├─ music/
 │  │  │  ├─ now-playing.ts          # Spotify/Music 폴링·앨범아트 수집
-│  │  │  └─ playback-controls.ts    # 미디어 제어
+│  │  │  └─ playback-controls.ts    # 미디어 제어·이전 키 처음/이전
 │  │  ├─ display/
 │  │  │  ├─ frame-renderer.ts       # 240×135 Canvas 레이아웃·LCD 볼륨 OSD
 │  │  │  ├─ frame-pipeline.ts       # RGB565 디더링·인코딩·프리뷰 복원
 │  │  │  ├─ text-layout.ts          # 실제 픽셀 폭 기반 줄바꿈·말줄임
 │  │  │  ├─ volume-overlay.ts       # 볼륨 값 정규화
-│  │  │  ├─ youtube-lcd.ts          # 소리 창 + 음소거 LCD 창, RGB565 탭
-│  │  │  └─ youtube-library.ts      # 로컬 YouTube 목록
+│  │  │  ├─ youtube-lcd.ts          # 소리/LCD 창, 캡처, 시계 맞춤, watch 재로드
+│  │  │  ├─ youtube-library.ts      # 로컬 YouTube 목록·현재 인덱스
+│  │  │  └─ youtube-oembed.ts       # 목록 추가 시 제목·채널
 │  │  ├─ input/
 │  │  │  ├─ fine-volume.ts          # F20/F19 노브 미세 볼륨
-│  │  │  └─ key-action-router.ts    # F16~F18 → 활성 프로필 앱 실행
+│  │  │  └─ key-action-router.ts    # F16~F18 → 앱 실행·YouTube 전송
 │  │  └─ device/
 │  │     ├─ device-host.ts          # main-thread 워커 프록시
 │  │     ├─ device-worker.ts        # HID I/O·220ms LCD 유지 전송
@@ -237,7 +286,11 @@ git에 커밋되는 핵심 파일 기준입니다. 생성물 `out/`, `dist/`, `n
 │  ├─ preload/index.ts              # 안전한 window.xpad IPC 브리지
 │  └─ renderer/src/
 │     ├─ App.tsx                    # 창 역할별 화면·상태 수명 주기
-│     ├─ components/                # 확장/미니/설정/키보드 UI
+│     ├─ youtube-playback-label.ts  # 제목·진행률·시크 초·베젤 숫자
+│     ├─ components/
+│     │  ├─ player-view.tsx         # 확장/미니, YouTube 시크·목록 추가/리스트
+│     │  ├─ youtube-settings-section.tsx
+│     │  └─ youtube-account-section.tsx
 │     └─ styles.css                 # 레이아웃·디자인 토큰·반응형 스타일
 └─ tools/                           # 장치 조사·검증·에셋 생성 스크립트
 ```
@@ -247,6 +300,9 @@ git에 커밋되는 핵심 파일 기준입니다. 생성물 `out/`, `dist/`, `n
 ## 기술 문서
 
 - [현재 개발 내용 및 검증 보고서](docs/DEVELOPMENT_REPORT.md)
+- [YouTube P5 현재 구조](docs/plan/youtube-p5/STRUCTURE_REVIEW.md)
+- [YouTube P5 기능 계획](docs/plan/youtube-p5/PLAN.md)
+- [YouTube LCD 처리 워크플로](docs/diagrams/youtube-pipeline.html)
 - [키보드 설정·프로필·백업 기능 계획과 구현 현황](docs/plan/keyboard-settings/PLAN.md)
 - [재생 화면 P1~P5 단축 전환 설계·구현 기록](docs/plan/profile-quick-switch/GUI.md)
 - [XPAD Mini 직접 연결 및 제어 기능 전체 가이드](docs/XPAD_MINI_DIRECT_API.md)

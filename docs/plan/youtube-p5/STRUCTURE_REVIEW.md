@@ -4,7 +4,7 @@
 |---|---|
 | 목적 | 인증 유지 + Mac 소리 끊김 방지 + 기기 240×135 RGB565 전송 |
 | 대상 | `src/main/display/youtube-lcd.ts`, `src/main/index.ts`, `src/main/device/*`, `src/renderer/src/components/player-view.tsx` |
-| 갱신 | 2026-08-18 |
+| 갱신 | 2026-08-19 |
 | 그림 | [docs/diagrams/youtube-pipeline.html](../../diagrams/youtube-pipeline.html) |
 
 ## 결론
@@ -15,10 +15,11 @@
 ```
 같은 로그인 세션
  ├─ 소리 창: 재생만. getImageData 없음. setPlaybackQuality 없음
- └─ LCD 창: 음소거, tiny 고정, HID 전송 ms×0.55 자동 폴링(40–100ms)
+ │    loudness 핀(mute/0만 복구, 이후 상승 클램프)
+ └─ LCD 창: Chromium setAudioMuted + 요소 mute, tiny 고정, HID×0.55 캡처
       ├─ HID 0x25 → 기기 (최신 1장만)
-      └─ 같은 RGB565 → PNG 미리보기 (같은 캡처 주기)
-           └─ 베젤 우측 하단: 직전 HID 전송 간격(ms)
+      └─ 같은 RGB565 → PNG 미리보기
+           └─ 베젤: 직전 HID 전송 간격(ms)
 ```
 
 ## 단계
@@ -37,8 +38,9 @@
 
 | 주기 | 동작 |
 |---|---|
-| 2초 | 소리 창: play 유지. LCD 창: 음소거·tiny 유지·탭 재부착 |
-| 1초 | 소리 창 메타/광고. LCD가 1.5초 이상 벌어지면 LCD만 seek |
+| 2초 | 소리 창: play 유지. LCD 창: 요소 mute·tiny 유지·탭 재부착. `setAudioMuted` 재확인 |
+| 1초 | 소리 창 메타/광고. 끝나면 다음 곡 |
+| 400ms | LCD 시계. 목표 = 소리 시각 + HID 전송 s. 오차 > 60ms이면 LCD만 seek. 영상 ID가 다르면 LCD만 watch 재로드 |
 | 자동 40–100ms | LCD 캡처. `nextYoutubeCaptureIntervalMs` = `clamp(hidDrawMs×0.55, 40, 100)`. HID 실측 전 기본 55ms |
 | HID ~95–110ms | 전체 장 전송 1회. 기기 상한 약 10fps. 전송이 끝나면 대기 중인 최신 장을 바로 보냄 |
 
@@ -75,17 +77,22 @@
 | 화질 바닥 `tiny`(144p) | LCD는 240×135 |
 | 최신 1장만 HID | 큐를 쌓으면 기기만 바빠짐 |
 | 캡처 자동 + 한 장 겹침 | 전송 fps를 올리지 않고 보내는 장만 더 새것으로 |
+| 곡 전환은 watch URL 재로드 | `loadVideoById`는 숨은 소리 창에서 이전 곡이 남음 |
+| LCD Chromium 음소거 | `player.mute`/`setVolume`은 persist에 저장되어 소리 창을 오염함 |
+| 로컬 파일 다운로드 없음 | Premium이어도 공식 앱 오프라인만 허용. 서드파티 반출 API 없음 |
 
 ## 이미 반영한 수정
 
 | 이전 문제 | 현재 |
 |---|---|
-| 2초마다 소리 창에 setQuality/volume=1 | 화질 API는 LCD 창만. 소리는 미세 오차(≥0.99) 무시 |
+| 2초마다 소리 창에 setQuality/volume=1 | 화질 API는 LCD 창만. 소리는 mute/0만 복구. loudness는 핀하고 이후 상승(0.455→0.775)은 막음. LCD는 Chromium `setAudioMuted` |
 | 소리 나는 renderer에서 getImageData | LCD 음소거 창에서만 탭 |
 | 미리보기 500ms라 컴퓨터가 더 끊김 | 기기와 같은 RGB565·같은 캡처 주기 |
 | 1ms/고정 주기로 CPU만 낭비 | HID `drawMs×0.55` 자동. 무시 ~45% |
 | 베젤에 끝-끝 딜레이(122ms) | 직전 HID 전송 간격만 표시 |
 | 내부 화질/볼륨 로그 없음 | 전환 시 `youtube-audio` jsonl |
+| 다음/이전 시 LCD만 바뀌고 소리는 이전 곡 | 양쪽 창을 watch URL로 다시 연다. `loadVideoById` 쓰지 않음 |
+| 화면과 소리가 따로 감 | LCD를 소리+HID전송만큼 앞서 두고 400ms마다 맞춤. 영상 ID가 다르면 LCD만 다시 연다 |
 
 ## 남은 한계
 
@@ -93,7 +100,9 @@
 - 광고 타이밍은 창마다 다를 수 있다 (허용).
 - `sandbox: false`는 두 watch 창 모두. 픽셀 탭 때문에 켠 값이다.
 - `hwdecode=on`은 로그 라벨이다. VideoToolbox 직접 호출은 없다.
-- 소리 창과 LCD 창 시각 차이는 베젤 숫자에 안 들어간다 (허용 1.5초).
+- 소리 창과 LCD 창 시각 차이는 베젤 숫자에 안 들어간다. 광고가 아니면 목표(소리+HID 리드)와 60ms 넘게 벌어질 때 LCD만 맞춘다.
+- 이전 키는 한 번이면 처음으로, 2.5초 안 두 번째면 이전 곡이다.
+- 재생 창 `목록리스트`는 선택·삭제만. 순서 변경은 설정 창.
 - 설치본 확인은 `./build.sh deploy host` 이후.
 
 ## 확인
@@ -104,7 +113,9 @@
 | LCD 화질 | `lcd quality=tiny` |
 | 자동 주기 | `intervalMs=` · `hidIgnorePct≈45` |
 | HID 전송 간격 | 베젤 `NNms` = `hidDrawMs`. 콘솔은 `XPAD_LCD_FPS_LOG=1` 때 `[lcd-fps] hidFps≈10` |
+| 시계 맞춤 | 콘솔 `sync lcd to audio+lead` · `lcd video mismatch` |
 | 미리보기=기기 | 같은 장, 같은 끊김 |
+| 재생 창 목록 | `목록 추가` · `목록리스트` 선택/삭제 |
 
 ## 문서
 

@@ -1,5 +1,5 @@
 <!-- Parent: ../AGENTS.md -->
-<!-- Generated: 2026-08-18 | Updated: 2026-08-18 -->
+<!-- Generated: 2026-08-18 | Updated: 2026-08-19 -->
 
 # display
 
@@ -18,8 +18,8 @@
 | `text-layout.test.ts` | 고정폭 측정기로 레이아웃 검증 |
 | `volume-overlay.ts` | `VolumeFeedback` 정규화. LCD/미리보기 OSD |
 | `volume-overlay.test.ts` | 볼륨 클램프 |
-| `youtube-lcd.ts` | 같은 로그인 세션의 소리 창 + 음소거 LCD 창. LCD만 `getImageData` → RGB565. 캡처는 HID `drawMs×0.55`(40–100ms). `delayMs`는 직전 HID 전송 간격. 미리보기는 그 버퍼를 PNG로 복원 |
-| `youtube-lcd.test.ts` | video ID, prepare 역할(audio/lcd), RGB565 미리보기 |
+| `youtube-lcd.ts` | 소리 창 + LCD 창. LCD만 `getImageData`. 캡처 HID×0.55. Chromium mute. loudness 핀. 곡 전환은 watch 재로드. LCD 시계=소리+HID 리드(400ms/60ms) |
+| `youtube-lcd.test.ts` | video ID, prepare 역할, 볼륨 핀, 시계 목표, RGB565 미리보기 |
 | `youtube-library.ts` | 로컬 재생 목록·현재 인덱스 |
 | `youtube-oembed.ts` | 목록 추가 시 제목·채널 조회 |
 
@@ -35,6 +35,8 @@
 - 한글은 Apple SD Gothic Neo. 웹 폰트를 원격 로드하지 않는다.
 - 미리보기 data URL은 main이 `StatusSnapshot.previewDataUrl`로 푸시한다. YouTube는 기기와 같은 RGB565에서 복원한다.
 - YouTube 소리 창에서는 `getImageData`를 호출하지 않는다. 화질 고정·픽셀 탭은 LCD 창만.
+- LCD 음소거는 `setAudioMuted`와 요소 mute. `player.mute`/`setVolume` 금지.
+- 곡 전환은 `loadVideoById`가 아니라 양쪽 `watch?v=` 재로드.
 - `StatusSnapshot.youtubeLcdDelayMs`는 끝-끝 딜레이가 아니라 직전 `0x25` 전송 간격이다.
 
 ### Testing Requirements

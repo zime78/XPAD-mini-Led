@@ -76,10 +76,41 @@ export function youtubeLcdSendIntervalMs(hidDrawMs: number | null | undefined): 
   return Math.round(hid);
 }
 
-const LCD_SYNC_DRIFT_SEC = 1.5;
+/** 기기 전송 지연만큼 LCD를 소리보다 앞서 둔다. 장이 도착할 때 소리와 맞게. */
+export const LCD_SYNC_LEAD_DEFAULT_SEC = 0.1;
+/** 목표 시각(소리+전송 리드)에서 이보다 벌어지면 LCD만 되돌린다. */
+export const LCD_SYNC_DRIFT_SEC = 0.06;
+
+/** 소리 시각에 HID 전송 시간을 더해 LCD가 보여줄 목표 시각을 만든다. */
+export function youtubeLcdClockTarget(
+  audioPosition: number,
+  hidDrawMs: number | null | undefined
+): number {
+  const hid = Number(hidDrawMs);
+  const lead = Number.isFinite(hid) && hid > 0 ? hid / 1000 : LCD_SYNC_LEAD_DEFAULT_SEC;
+  return audioPosition + lead;
+}
+
+/** 광고 중이 아니고 목표 시각과 오차가 허용보다 클 때만 LCD를 되돌린다. */
+export function shouldSeekYoutubeLcdClock(input: {
+  audioPosition: number;
+  lcdPosition: number;
+  audioAd: boolean;
+  lcdAd: boolean;
+  maxDriftSec?: number;
+  hidDrawMs?: number | null;
+}): boolean {
+  if (input.audioAd || input.lcdAd) return false;
+  if (!Number.isFinite(input.audioPosition) || !Number.isFinite(input.lcdPosition)) return false;
+  const target = youtubeLcdClockTarget(input.audioPosition, input.hidDrawMs ?? null);
+  const limit = input.maxDriftSec ?? LCD_SYNC_DRIFT_SEC;
+  return Math.abs(input.lcdPosition - target) > limit;
+}
 const FPS_LOG_INTERVAL_MS = 2000;
 /** 제목·상태는 캡처보다 드물게 읽는다. 음성 스레드를 건드리지 않게 1초. */
 const INFO_INTERVAL_MS = 1000;
+/** 화면·소리 시계는 더 자주 맞춘다. */
+const CLOCK_INTERVAL_MS = 400;
 /** 허용 화질이거나 이미 고정한 unknown이면 다시 setPlaybackQuality 하지 않는다. */
 export function shouldApplyYoutubeQuality(input: {
   current: string | null | undefined;
@@ -97,9 +128,21 @@ export function shouldApplyYoutubeQuality(input: {
   return Boolean(current && current !== 'unknown' && current !== 'auto' && !pref.includes(current));
 }
 
-/** mute이거나 체감될 만큼 작을 때만 HTML 볼륨을 되돌린다. 1과의 미세 오차는 무시한다. */
+/** persist가 mute/0으로 샌 경우만 되돌린다. YouTube loudness(0.455 등)는 덮지 않는다. */
 export function shouldResetYoutubeVolume(muted: boolean, volume: number): boolean {
-  return muted || !Number.isFinite(volume) || volume < 0.99;
+  return muted || !Number.isFinite(volume) || volume <= 0;
+}
+
+/** 더 작은 loudness가 오면 핀을 낮춘다. 0/비정상은 무시한다. */
+export function nextYoutubePinnedVolume(pinned: number | null, volume: number): number | null {
+  if (!Number.isFinite(volume) || volume <= 0) return pinned;
+  if (pinned == null || volume < pinned) return volume;
+  return pinned;
+}
+
+/** YouTube가 나중에 게인을 키우면(0.455→0.775) 핀으로 되돌린다. */
+export function shouldClampYoutubeVolumeUp(pinned: number | null, volume: number): boolean {
+  return pinned != null && Number.isFinite(volume) && volume > pinned;
 }
 
 /** 재생 중에는 캡처 주기마다 뽑는다. 숨은 창의 rVFC는 거의 안 불린다. 일시정지일 때만 dirty로 생략한다. */
@@ -769,17 +812,42 @@ export function preparePlayerScript(
     }
   }
   let volumeReset = false;
+  let leaked = 0;
+  if (lcd) {
+    // player.mute/setVolume 은 persist 세션에 저장되어 소리 창 볼륨까지 내린다.
+    // 이 문서의 media 요소만 끈다.
+    for (const media of document.querySelectorAll('video, audio')) {
+      if (!media.muted || media.volume !== 0) leaked += 1;
+      media.muted = true;
+      media.volume = 0;
+    }
+    if (leaked > 0) volumeReset = true;
+  }
   if (video) {
-    if (lcd) {
-      if (!video.muted || video.volume !== 0) {
-        video.muted = true;
-        video.volume = 0;
+    if (!lcd) {
+      // persist mute/0만 되돌린다. 이후 커지는 게인(0.455→0.775)은 핀으로 막는다.
+      const data = player && typeof player.getVideoData === 'function' ? player.getVideoData() : {};
+      const audioVideoId = data && data.video_id ? String(data.video_id) : '';
+      if (window.__xpadAudioVideoId !== audioVideoId) {
+        window.__xpadAudioVideoId = audioVideoId;
+        window.__xpadPinnedVolume = null;
+      }
+      if (video.muted) {
+        video.muted = false;
         volumeReset = true;
       }
-    } else if (video.muted || !(video.volume >= 0.99)) {
-      video.muted = false;
-      video.volume = 1;
-      volumeReset = true;
+      let pinned = Number(window.__xpadPinnedVolume);
+      if (!Number.isFinite(pinned) || pinned <= 0) pinned = null;
+      const vol = video.volume;
+      if (!Number.isFinite(vol) || vol <= 0) {
+        video.volume = pinned ?? 1;
+        volumeReset = true;
+      } else if (pinned == null || vol < pinned) {
+        window.__xpadPinnedVolume = vol;
+      } else if (vol > pinned) {
+        video.volume = pinned;
+        volumeReset = true;
+      }
     }
     if (wantPlay && video.paused && !video.ended) {
       video.play?.().catch(() => {});
@@ -792,6 +860,7 @@ export function preparePlayerScript(
       muted: video.muted,
       qualityApplied,
       volumeReset,
+      leaked,
       adPlaying,
     };
   }
@@ -807,6 +876,7 @@ export function preparePlayerScript(
     muted: null,
     qualityApplied,
     volumeReset: false,
+    leaked,
     adPlaying,
   };
 })();
@@ -911,18 +981,19 @@ const SKIP_AD_SCRIPT = `
 })();
 `;
 
-function loadVideoScript(videoId: string): string {
-  return `
+/** 트랙을 바꾸기 전에 이전 영상의 소리를 즉시 끊는다. */
+export const STOP_MEDIA_SCRIPT = `
 (() => {
-  const player = document.getElementById('movie_player');
-  if (player && typeof player.loadVideoById === 'function') {
-    player.loadVideoById(${JSON.stringify(videoId)});
-    return { status: 'loaded' };
+  for (const media of document.querySelectorAll('video, audio')) {
+    try { media.pause(); } catch {}
   }
-  return { status: 'missing' };
+  const player = document.getElementById('movie_player');
+  if (player && typeof player.stopVideo === 'function') {
+    try { player.stopVideo(); } catch {}
+  }
+  return { stopped: true };
 })();
 `;
-}
 
 function youtubeSession() {
   return session.fromPartition(YOUTUBE_SESSION_PARTITION);
@@ -991,7 +1062,7 @@ export async function clearYoutubeSession(): Promise<void> {
   await session.fromPartition(YOUTUBE_SESSION_PARTITION).clearStorageData();
 }
 
-function createHiddenWatchWindow(title: string): BrowserWindow {
+function createHiddenWatchWindow(title: string, audioMuted = false): BrowserWindow {
   const window = new BrowserWindow({
     title,
     width: VIEW_WIDTH,
@@ -1019,6 +1090,8 @@ function createHiddenWatchWindow(title: string): BrowserWindow {
   window.webContents.setUserAgent(applyYoutubeSessionUserAgent());
   window.webContents.setBackgroundThrottling(false);
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  // YouTube player API mute는 persist에 저장된다. Chromium 출력만 끈다.
+  if (audioMuted) window.webContents.setAudioMuted(true);
   return window;
 }
 
@@ -1039,6 +1112,8 @@ export class YouTubeLcdPlayer {
   private timer: ReturnType<typeof setInterval> | null = null;
   private playTimer: ReturnType<typeof setInterval> | null = null;
   private infoTimer: ReturnType<typeof setInterval> | null = null;
+  private clockTimer: ReturnType<typeof setInterval> | null = null;
+  private aligningLcdVideo = false;
   private onStopped: (() => void) | null = null;
   private onEnded: (() => void) | null = null;
   private currentVideoId = '';
@@ -1053,6 +1128,7 @@ export class YouTubeLcdPlayer {
   private lastCaptureIntervalMs = CAPTURE_INTERVAL_DEFAULT_MS;
   private lastHidDrawMs: number | null = null;
   private captureGen = 0;
+  private loadGen = 0;
   private readonly meter = new IntervalMeter();
 
   get active(): boolean {
@@ -1077,7 +1153,7 @@ export class YouTubeLcdPlayer {
 
     hardenYoutubeSession();
     const audio = createHiddenWatchWindow('XPAD YouTube Audio');
-    const lcd = createHiddenWatchWindow('XPAD YouTube LCD');
+    const lcd = createHiddenWatchWindow('XPAD YouTube LCD', true);
     this.audioWindow = audio;
     this.lcdWindow = lcd;
     console.log(
@@ -1106,10 +1182,19 @@ export class YouTubeLcdPlayer {
     };
     const prepareLcd = () => {
       if (this.lcdWindow !== lcd || lcd.isDestroyed()) return;
+      if (!lcd.webContents.isAudioMuted()) lcd.webContents.setAudioMuted(true);
       void lcd.webContents
         .executeJavaScript(preparePlayerScript(!this.userPaused, 'lcd'))
         .then((result) => {
-          const info = result as { status?: string; quality?: string | null } | null;
+          const info = result as {
+            status?: string;
+            quality?: string | null;
+            leaked?: unknown;
+          } | null;
+          const leaked = Number(info?.leaked ?? 0);
+          if (leaked > 0) {
+            console.log(`[youtube-lcd] lcd audio leaked=${leaked}`);
+          }
           if (info?.status === 'playing' || info?.status === 'paused') {
             const quality = info.quality ?? 'unknown';
             if (quality !== this.lastLoggedQuality) {
@@ -1131,6 +1216,11 @@ export class YouTubeLcdPlayer {
         };
         emitInfo();
         this.infoTimer = setInterval(emitInfo, INFO_INTERVAL_MS);
+      }
+      if (!this.clockTimer) {
+        this.clockTimer = setInterval(() => {
+          void this.tickClock(audio);
+        }, CLOCK_INTERVAL_MS);
       }
     });
     lcd.webContents.on('did-finish-load', () => {
@@ -1170,6 +1260,20 @@ export class YouTubeLcdPlayer {
     void loadWatchPage(lcd, options.videoId);
   }
 
+  async seekTo(seconds: number): Promise<void> {
+    const audio = this.requireAudioWindow();
+    const script = seekPlayerScript(seconds);
+    await audio.webContents.executeJavaScript(script);
+    const lcd = this.lcdWindow;
+    if (lcd && !lcd.isDestroyed()) {
+      try {
+        await lcd.webContents.executeJavaScript(script);
+      } catch {
+        // 소리 창을 맞춘 뒤 LCD는 다음 동기화에서 따라온다.
+      }
+    }
+  }
+
   async controlPlayPause(): Promise<void> {
     const audio = this.requireAudioWindow();
     const result = (await audio.webContents.executeJavaScript(CONTROL_PLAY_PAUSE_SCRIPT)) as {
@@ -1191,28 +1295,40 @@ export class YouTubeLcdPlayer {
 
   async load(videoId: string): Promise<void> {
     const audio = this.requireAudioWindow();
+    const loadGen = ++this.loadGen;
     this.currentVideoId = videoId;
     this.lastEndedVideoId = null;
     this.userPaused = false;
     this.lastAudio = null;
     await Promise.all([
-      this.loadOnWindow(audio, videoId),
+      this.loadOnWindow(audio, videoId, loadGen),
       this.lcdWindow && !this.lcdWindow.isDestroyed()
-        ? this.loadOnWindow(this.lcdWindow, videoId)
+        ? this.loadOnWindow(this.lcdWindow, videoId, loadGen)
         : Promise.resolve(),
     ]);
+    if (this.loadGen === loadGen) void this.tickClock(audio);
   }
 
-  private async loadOnWindow(window: BrowserWindow, videoId: string): Promise<void> {
+  /** in-page loadVideoById는 숨은 소리 창에서 이전 영상이 남는 경우가 있어 watch URL로 연다. */
+  private async loadOnWindow(
+    window: BrowserWindow,
+    videoId: string,
+    loadGen: number
+  ): Promise<void> {
+    if (this.loadGen !== loadGen || window.isDestroyed()) return;
     try {
-      const result = (await window.webContents.executeJavaScript(loadVideoScript(videoId))) as {
-        status?: string;
-      } | null;
-      if (result?.status === 'loaded') return;
+      await window.webContents.executeJavaScript(STOP_MEDIA_SCRIPT);
     } catch {
-      // watch 페이지 재로드로 폴백한다.
+      // 페이지가 아직 없으면 바로 watch로 연다.
     }
-    await loadWatchPage(window, videoId);
+    if (this.loadGen !== loadGen || window.isDestroyed()) return;
+    window.webContents.stop();
+    try {
+      await loadWatchPage(window, videoId);
+    } catch {
+      if (this.loadGen !== loadGen) return;
+      throw new Error('YouTube 영상을 열지 못했습니다.');
+    }
   }
 
   async openSignInWindow(): Promise<YoutubeAccountState> {
@@ -1318,6 +1434,9 @@ export class YouTubeLcdPlayer {
     this.playTimer = null;
     if (this.infoTimer) clearInterval(this.infoTimer);
     this.infoTimer = null;
+    if (this.clockTimer) clearInterval(this.clockTimer);
+    this.clockTimer = null;
+    this.aligningLcdVideo = false;
     this.capturing = false;
     this.lastLoggedQuality = null;
     this.lastLoggedTap = null;
@@ -1399,7 +1518,7 @@ export class YouTubeLcdPlayer {
       this.noteAudio(raw);
       if (info) {
         onInfo?.(info);
-        void this.syncLcdClock(info.position);
+        void this.syncLcdClock(info.position, info.adPlaying, info.videoId);
       }
       const playerState = Number((raw as { playerState?: unknown } | null)?.playerState);
       if (
@@ -1448,8 +1567,24 @@ export class YouTubeLcdPlayer {
     this.onAudioChange?.(snapshot);
   }
 
-  /** 소리 창 시각과 LCD 창이 1.5초 이상 벌어지면 LCD만 맞춘다. */
-  private async syncLcdClock(position: number): Promise<void> {
+  /** 소리 창 위치만 읽어 LCD 시계를 맞춘다. */
+  private async tickClock(audio: BrowserWindow): Promise<void> {
+    if (audio.isDestroyed()) return;
+    try {
+      const raw = await audio.webContents.executeJavaScript(READ_PLAYER_INFO_SCRIPT);
+      const info = mapYoutubePlayerInfo(raw);
+      if (info) await this.syncLcdClock(info.position, info.adPlaying, info.videoId);
+    } catch {
+      // 다음 시계 주기에서 다시 맞춘다.
+    }
+  }
+
+  /** 소리 창이 기준이다. LCD만 맞춘다. 캡처·HID는 건드리지 않는다. */
+  private async syncLcdClock(
+    position: number,
+    audioAd: boolean,
+    audioVideoId = ''
+  ): Promise<void> {
     const lcd = this.lcdWindow;
     if (!lcd || lcd.isDestroyed() || !Number.isFinite(position)) return;
     try {
@@ -1457,10 +1592,38 @@ export class YouTubeLcdPlayer {
       const raw = await lcd.webContents.executeJavaScript(READ_PLAYER_INFO_SCRIPT);
       const lcdInfo = mapYoutubePlayerInfo(raw);
       if (!lcdInfo) return;
-      if (Math.abs(lcdInfo.position - position) <= LCD_SYNC_DRIFT_SEC) return;
-      await lcd.webContents.executeJavaScript(seekPlayerScript(position));
+      if (
+        VIDEO_ID_PATTERN.test(audioVideoId) &&
+        VIDEO_ID_PATTERN.test(lcdInfo.videoId) &&
+        audioVideoId !== lcdInfo.videoId
+      ) {
+        if (this.aligningLcdVideo) return;
+        this.aligningLcdVideo = true;
+        console.log(`[youtube-lcd] lcd video mismatch audio=${audioVideoId} lcd=${lcdInfo.videoId}`);
+        try {
+          await this.loadOnWindow(lcd, audioVideoId, this.loadGen);
+        } finally {
+          this.aligningLcdVideo = false;
+        }
+        return;
+      }
+      if (
+        !shouldSeekYoutubeLcdClock({
+          audioPosition: position,
+          lcdPosition: lcdInfo.position,
+          audioAd,
+          lcdAd: lcdInfo.adPlaying,
+          hidDrawMs: this.lastHidDrawMs,
+        })
+      ) {
+        return;
+      }
+      const target = youtubeLcdClockTarget(position, this.lastHidDrawMs);
+      const driftMs = Math.round((lcdInfo.position - target) * 1000);
+      console.log(`[youtube-lcd] sync lcd to audio+lead driftMs=${driftMs}`);
+      await lcd.webContents.executeJavaScript(seekPlayerScript(target));
     } catch {
-      // 다음 정보 주기에서 다시 맞춘다.
+      // 다음 시계 주기에서 다시 맞춘다.
     }
   }
 }

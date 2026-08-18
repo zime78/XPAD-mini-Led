@@ -1,5 +1,5 @@
 <!-- Parent: ../AGENTS.md -->
-<!-- Generated: 2026-08-18 | Updated: 2026-08-18 -->
+<!-- Generated: 2026-08-18 | Updated: 2026-08-19 -->
 
 # shared
 
@@ -11,7 +11,7 @@ main / preload / renderer가 같이 import하는 공용 계약. 런타임 로직
 
 | File | Description |
 |------|-------------|
-| `types.ts` | `TrackInfo`, `AppConfig`, `StatusSnapshot`(`youtubeLcdDelayMs`는 HID 전송 간격), `DEFAULT_CONFIG`. 프로필 P1–P5, 하단 슬롯, 키보드 액션, 노브·키맵 백업 |
+| `types.ts` | `TrackInfo`, `AppConfig`, `StatusSnapshot`(`youtubeLcdDelayMs`는 HID 전송 간격, `youtubeLibrary`는 재생 창 목록), `DEFAULT_CONFIG`. 프로필 P1–P5, 하단 슬롯, 키보드 액션, 노브·키맵 백업 |
 
 ## Subdirectories
 

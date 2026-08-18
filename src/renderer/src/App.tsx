@@ -110,6 +110,18 @@ export function App() {
             const result = await window.xpad.addYoutubeVideo(input);
             setStatus(result.status);
           }}
+          onPlayYoutube={async (index) => {
+            const result = await window.xpad.playYoutubeVideo(index);
+            setStatus(result.status);
+          }}
+          onRemoveYoutube={async (index) => {
+            const result = await window.xpad.removeYoutubeVideo(index);
+            setStatus(result.status);
+          }}
+          onSeekYoutube={async (seconds) => {
+            const result = await window.xpad.seekYoutube(seconds);
+            setStatus(result.status);
+          }}
         />
       </main>
     );

@@ -276,6 +276,7 @@ export interface StatusSnapshot {
   youtubeLcdActive: boolean;
   youtubeLcdDelayMs: number | null;
   youtubePlayback: YoutubePlaybackInfo | null;
+  youtubeLibrary: YoutubeLibrary;
   youtubeAccount: YoutubeAccountState;
   knobFineVolumeState: KnobFineVolumeState;
   knobFineVolumeError: string | null;
