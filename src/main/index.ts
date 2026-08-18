@@ -31,7 +31,13 @@ import {
   ProfileId,
   StatusSnapshot,
   TrackInfo,
+  EMPTY_YOUTUBE_ACCOUNT,
   YOUTUBE_PROFILE_ID,
+  YOUTUBE_TRANSPORT_COMMANDS,
+  type YoutubeAccountState,
+  type YoutubeCommandResult,
+  type YoutubePlaybackInfo,
+  type YoutubeTransportCommand,
 } from '../shared/types';
 import { loadConfig, saveConfig } from './config';
 import { DiagnosticLog } from './diagnostic-log';
@@ -40,8 +46,21 @@ import { resolveDisplayTrack } from './display/display-state';
 import { renderTrackFrame } from './display/frame-renderer';
 import type { VolumeFeedback } from './display/volume-overlay';
 import {
+  addYoutubeVideo,
+  currentYoutubeItem,
+  moveYoutubeVideo,
+  rememberYoutubeMetadata,
+  removeYoutubeVideo,
+  sameYoutubePlayback,
+  selectYoutubeIndex,
+  stepYoutubeIndex,
+  withYoutubeQueue,
+} from './display/youtube-library';
+import { fetchYoutubeOembed } from './display/youtube-oembed';
+import {
+  clearYoutubeSession,
   parseYouTubeVideoId,
-  SAMPLE_YOUTUBE_VIDEO_ID,
+  readYoutubeAccountState,
   YouTubeLcdPlayer,
 } from './display/youtube-lcd';
 import { KeyboardBackupStore } from './keyboard-backups';
@@ -86,6 +105,8 @@ let profileSwitching = false;
 let profileSwitchError: string | null = null;
 let playerViewMode: PlayerViewMode = 'expanded';
 let youtubeLcd: YouTubeLcdPlayer | null = null;
+let youtubePlayback: YoutubePlaybackInfo | null = null;
+let youtubeAccount: YoutubeAccountState = { ...EMPTY_YOUTUBE_ACCOUNT };
 const hidDisabled = process.env.XPAD_DISABLE_HID === '1';
 const youtubeTestRequested = process.env.XPAD_YOUTUBE_TEST === '1';
 // 음성은 Mac에서 재생한다. 소프트 디코드·백그라운드 스로틀은 오디오 언더런을 만든다.
@@ -130,6 +151,8 @@ function currentStatus(): StatusSnapshot {
     monitorError: monitor?.lastError ?? null,
     previewDataUrl,
     youtubeLcdActive: Boolean(youtubeLcd?.active),
+    youtubePlayback: youtubeLcd?.active ? youtubePlayback : null,
+    youtubeAccount,
     knobFineVolumeState: fineVolumeError
       ? 'error'
       : (deviceHost?.knobFineVolumeState ?? 'disabled'),
@@ -271,9 +294,9 @@ function openSettingsWindow(): void {
   }
   settingsWindow = new BrowserWindow({
     width: 760,
-    height: 690,
+    height: 860,
     minWidth: 680,
-    minHeight: 620,
+    minHeight: 720,
     title: 'XPAD Mini Now Playing 설정',
     autoHideMenuBar: true,
     webPreferences: windowWebPreferences(),
@@ -348,20 +371,60 @@ function showVolumeFeedback(adjustment: FineVolumeAdjustment): void {
   }, VOLUME_FEEDBACK_DURATION_MS);
 }
 
-function youtubeSampleVideoId(): string {
+function youtubeVideoIdToPlay(): string | null {
   return (
-    parseYouTubeVideoId(process.env.XPAD_YOUTUBE_ID ?? SAMPLE_YOUTUBE_VIDEO_ID) ??
-    SAMPLE_YOUTUBE_VIDEO_ID
+    parseYouTubeVideoId(process.env.XPAD_YOUTUBE_ID ?? '') ??
+    currentYoutubeItem(config.youtubeLibrary)?.videoId ??
+    null
   );
 }
 
-function startYoutubeLcdSample(rawId = youtubeSampleVideoId()): void {
-  const videoId = parseYouTubeVideoId(rawId);
+function pendingYoutubePlayback(videoId: string): YoutubePlaybackInfo {
+  const item = currentYoutubeItem(config.youtubeLibrary);
+  return withYoutubeQueue(
+    {
+      videoId,
+      title: item?.videoId === videoId ? item.title : '',
+      channel: item?.videoId === videoId ? item.channel : '',
+      state: 'stopped',
+      duration: 0,
+      position: 0,
+      signedIn: youtubeAccount.signedIn,
+      adPlaying: false,
+    },
+    config.youtubeLibrary
+  );
+}
+
+function persistYoutubeLibrary(library: typeof config.youtubeLibrary): void {
+  config = saveConfig({ ...config, youtubeLibrary: library });
+}
+
+function youtubeCommandResult(): YoutubeCommandResult {
+  return {
+    config: structuredClone(config),
+    status: currentStatus(),
+  };
+}
+
+function startYoutubeIfNeeded(): void {
+  const videoId = youtubeVideoIdToPlay();
+  if (!videoId) {
+    stopYoutubeLcdSample(false);
+    return;
+  }
+  startYoutubeLcdSample(videoId);
+}
+
+function startYoutubeLcdSample(rawId = youtubeVideoIdToPlay()): void {
+  const videoId = rawId ? parseYouTubeVideoId(rawId) : null;
   if (!videoId) {
     console.error('[youtube-lcd] invalid video id', rawId);
+    stopYoutubeLcdSample(false);
     return;
   }
   if (!youtubeLcd) youtubeLcd = new YouTubeLcdPlayer();
+  youtubePlayback = pendingYoutubePlayback(videoId);
   youtubeLcd.start({
     videoId,
     onFrame: (frame) => {
@@ -373,7 +436,27 @@ function startYoutubeLcdSample(rawId = youtubeSampleVideoId()): void {
       previewDataUrl = dataUrl;
       playerWindow?.webContents.send('status-changed', currentStatus());
     },
+    onInfo: (info) => {
+      if (!youtubeLcd?.active) return;
+      const remembered = rememberYoutubeMetadata(config.youtubeLibrary, info);
+      if (remembered !== config.youtubeLibrary) persistYoutubeLibrary(remembered);
+      const next = withYoutubeQueue(info, config.youtubeLibrary);
+      const changed = !sameYoutubePlayback(youtubePlayback, next);
+      youtubePlayback = next;
+      youtubeAccount = {
+        signedIn: next.signedIn,
+        label: next.signedIn ? '연결됨' : EMPTY_YOUTUBE_ACCOUNT.label,
+      };
+      if (changed) broadcastStatus();
+    },
+    onEnded: () => {
+      if (!youtubeLcd?.active) return;
+      void controlYoutube('next').catch((error) => {
+        console.error('[youtube-lcd] auto-next failed', error);
+      });
+    },
     onStopped: () => {
+      youtubePlayback = null;
       refreshDisplay('youtube-stopped');
     },
   });
@@ -382,10 +465,92 @@ function startYoutubeLcdSample(rawId = youtubeSampleVideoId()): void {
 
 function stopYoutubeLcdSample(silent = false): void {
   youtubeLcd?.stop({ silent });
+  youtubePlayback = null;
   if (silent) return;
   previewDataUrl = null;
   broadcastStatus();
   refreshDisplay('youtube-stop');
+}
+
+async function playYoutubeIndex(index: number): Promise<void> {
+  const selected = selectYoutubeIndex(config.youtubeLibrary, index);
+  persistYoutubeLibrary(selected);
+  const item = currentYoutubeItem(selected);
+  if (!item) {
+    stopYoutubeLcdSample(false);
+    return;
+  }
+  if (youtubeLcd?.active) {
+    youtubePlayback = pendingYoutubePlayback(item.videoId);
+    broadcastStatus();
+    await youtubeLcd.load(item.videoId);
+    return;
+  }
+  startYoutubeLcdSample(item.videoId);
+}
+
+async function controlYoutube(command: YoutubeTransportCommand): Promise<void> {
+  if (command === 'play-pause') {
+    if (!youtubeLcd?.active) {
+      startYoutubeIfNeeded();
+      if (!youtubeLcd?.active) throw new Error('재생할 영상이 없습니다.');
+      return;
+    }
+    await youtubeLcd.controlPlayPause();
+    return;
+  }
+  const stepped = stepYoutubeIndex(config.youtubeLibrary, command === 'next' ? 1 : -1);
+  if (!currentYoutubeItem(stepped)) throw new Error('재생할 영상이 없습니다.');
+  persistYoutubeLibrary(stepped);
+  await playYoutubeIndex(stepped.currentIndex);
+}
+
+async function addYoutubeFromInput(raw: string): Promise<YoutubeCommandResult> {
+  const videoId = parseYouTubeVideoId(raw);
+  if (!videoId) throw new Error('YouTube 영상 URL 또는 ID를 입력하세요.');
+  const meta = await fetchYoutubeOembed(videoId);
+  const wasEmpty = config.youtubeLibrary.items.length === 0;
+  persistYoutubeLibrary(
+    addYoutubeVideo(config.youtubeLibrary, {
+      videoId,
+      title: meta.title,
+      channel: meta.channel,
+      addedAt: new Date().toISOString(),
+    })
+  );
+  if (wasEmpty && (deviceHost?.activeProfileId ?? config.keyboardSettings.activeProfileId) === YOUTUBE_PROFILE_ID) {
+    startYoutubeIfNeeded();
+  }
+  return youtubeCommandResult();
+}
+
+async function removeYoutubeAt(index: number): Promise<YoutubeCommandResult> {
+  const removingCurrent = index === config.youtubeLibrary.currentIndex;
+  persistYoutubeLibrary(removeYoutubeVideo(config.youtubeLibrary, index));
+  if (config.youtubeLibrary.items.length === 0) {
+    stopYoutubeLcdSample(false);
+  } else if (removingCurrent && youtubeLcd?.active) {
+    await playYoutubeIndex(config.youtubeLibrary.currentIndex);
+  } else {
+    broadcastStatus();
+  }
+  return youtubeCommandResult();
+}
+
+async function signInYoutube(): Promise<YoutubeCommandResult> {
+  if (!youtubeLcd) youtubeLcd = new YouTubeLcdPlayer();
+  youtubeAccount = await youtubeLcd.openSignInWindow();
+  if (youtubeLcd.active) startYoutubeIfNeeded();
+  else broadcastStatus();
+  return youtubeCommandResult();
+}
+
+async function signOutYoutube(): Promise<YoutubeCommandResult> {
+  await clearYoutubeSession();
+  youtubeAccount = { ...EMPTY_YOUTUBE_ACCOUNT };
+  if (youtubeLcd?.active) startYoutubeIfNeeded();
+  else broadcastStatus();
+  return youtubeCommandResult();
 }
 
 function disposeVolumeFeedback(): void {
@@ -516,6 +681,13 @@ function syncKeyboardActiveProfile(profileId: ProfileId): void {
   keyActionRouter.selectProfile(profileId);
 }
 
+/** 앱을 켜면 장치는 항상 P1 음악 화면부터 시작한다. 사용자가 P5를 누르기 전에는 유튜브를 켜지 않는다. */
+async function applyStartupProfile(): Promise<void> {
+  diagnosticLog?.log('startup-profile', { to: 1 });
+  console.log('[display] startup profile P1');
+  await switchKeyboardProfile(1);
+}
+
 async function switchKeyboardProfile(profileId: ProfileId): Promise<StatusSnapshot> {
   if (profileSwitching) return currentStatus();
   profileSwitching = true;
@@ -532,7 +704,7 @@ async function switchKeyboardProfile(profileId: ProfileId): Promise<StatusSnapsh
     });
     console.log(`[display] profile-switch to=${selectedProfileId} youtube=${selectedProfileId === YOUTUBE_PROFILE_ID}`);
     if (selectedProfileId === YOUTUBE_PROFILE_ID) {
-      startYoutubeLcdSample();
+      startYoutubeIfNeeded();
     } else {
       stopYoutubeLcdSample(false);
       void monitor.refresh();
@@ -547,6 +719,10 @@ async function switchKeyboardProfile(profileId: ProfileId): Promise<StatusSnapsh
 }
 
 async function executeKeyboardAction(action: KeyboardAction): Promise<void> {
+  if (action.type === 'youtube-transport') {
+    await controlYoutube(action.command);
+    return;
+  }
   if (action.type === 'key') {
     if (!MEDIA_KEY_CODES.includes(action.keyCode as MediaKeyCode)) {
       throw new Error(
@@ -588,8 +764,17 @@ async function runPlayerAction(value: unknown): Promise<KeyboardActionResult> {
     return { ok: false, error: '지원하지 않는 버튼 위치입니다.' };
   }
   const status = currentStatus();
-  const profile = status.keyboardProfileState.profiles[status.keyboardProfileState.activeProfileId];
+  const youtubeActive =
+    Boolean(youtubeLcd?.active) ||
+    status.keyboardProfileState.activeProfileId === YOUTUBE_PROFILE_ID;
   try {
+    if (youtubeActive) {
+      const command =
+        value === 'left' ? 'previous' : value === 'center' ? 'play-pause' : 'next';
+      await controlYoutube(command);
+      return { ok: true, error: null };
+    }
+    const profile = status.keyboardProfileState.profiles[status.keyboardProfileState.activeProfileId];
     await executeKeyboardAction(profile.assignments[value as KeyboardSlot]);
     return { ok: true, error: null };
   } catch (error) {
@@ -649,6 +834,13 @@ function requirePlayerWindow(event: Electron.IpcMainInvokeEvent): void {
   }
 }
 
+function requireSettingsOrPlayer(event: Electron.IpcMainInvokeEvent): void {
+  const requester = BrowserWindow.fromWebContents(event.sender);
+  if (requester !== settingsWindow && requester !== playerWindow) {
+    throw new Error('설정 또는 재생 창에서만 사용할 수 있는 요청입니다.');
+  }
+}
+
 function registerIpc(): void {
   ipcMain.handle('get-status', () => currentStatus());
   ipcMain.handle('get-config', () => config);
@@ -696,6 +888,49 @@ function registerIpc(): void {
   ipcMain.handle('run-player-action', (event, slot: unknown) => {
     requirePlayerWindow(event);
     return runPlayerAction(slot);
+  });
+  ipcMain.handle('youtube-library-add', async (event, value: unknown) => {
+    requireSettingsOrPlayer(event);
+    return addYoutubeFromInput(typeof value === 'string' ? value : '');
+  });
+  ipcMain.handle('youtube-library-remove', async (event, value: unknown) => {
+    requireSettingsOrPlayer(event);
+    if (typeof value !== 'number') throw new Error('목록에서 해당 영상을 찾지 못했습니다.');
+    return removeYoutubeAt(value);
+  });
+  ipcMain.handle('youtube-library-move', async (event, index: unknown, direction: unknown) => {
+    requireSettingsOrPlayer(event);
+    if (typeof index !== 'number' || (direction !== -1 && direction !== 1)) {
+      throw new Error('목록 순서를 바꿀 수 없습니다.');
+    }
+    persistYoutubeLibrary(moveYoutubeVideo(config.youtubeLibrary, index, direction));
+    broadcastStatus();
+    return youtubeCommandResult();
+  });
+  ipcMain.handle('youtube-library-play', async (event, value: unknown) => {
+    requireSettingsOrPlayer(event);
+    if (typeof value !== 'number') throw new Error('재생할 영상을 찾지 못했습니다.');
+    await playYoutubeIndex(value);
+    return youtubeCommandResult();
+  });
+  ipcMain.handle('youtube-control', async (event, value: unknown) => {
+    requireSettingsOrPlayer(event);
+    if (
+      typeof value !== 'string' ||
+      !YOUTUBE_TRANSPORT_COMMANDS.includes(value as YoutubeTransportCommand)
+    ) {
+      throw new Error('지원하지 않는 YouTube 동작입니다.');
+    }
+    await controlYoutube(value as YoutubeTransportCommand);
+    return youtubeCommandResult();
+  });
+  ipcMain.handle('youtube-sign-in', async (event) => {
+    requireSettingsOrPlayer(event);
+    return signInYoutube();
+  });
+  ipcMain.handle('youtube-sign-out', async (event) => {
+    requireSettingsOrPlayer(event);
+    return signOutYoutube();
   });
   ipcMain.handle('save-keyboard-settings', async (event, next: KeyboardSettings) => {
     requireKeyboardWindow(event);
@@ -789,20 +1024,38 @@ if (!gotLock) {
     );
 
     let lastDeviceReady = false;
+    let startupProfileApplied = false;
     deviceHost.on('status', () => {
       diagnosticLog.log('device-status', {
         connected: deviceHost.connected,
         protocolReady: deviceHost.protocolReady,
         knobFineVolumeState: deviceHost.knobFineVolumeState,
       });
-      if (deviceHost.activeProfileId) {
+      if (deviceHost.activeProfileId && startupProfileApplied) {
         syncKeyboardActiveProfile(deviceHost.activeProfileId);
       }
       const ready = Boolean(deviceHost.connected && deviceHost.protocolReady);
       if (ready !== lastDeviceReady) {
         lastDeviceReady = ready;
-        if (ready) refreshDisplay('device-ready');
-        else broadcastStatus();
+        if (ready) {
+          if (!startupProfileApplied) {
+            startupProfileApplied = true;
+            void applyStartupProfile().catch((error) => {
+              console.error('[display] startup profile P1 failed', error);
+              refreshDisplay('device-ready');
+            });
+          } else if (
+            (deviceHost.activeProfileId ?? config.keyboardSettings.activeProfileId) ===
+            YOUTUBE_PROFILE_ID
+          ) {
+            startYoutubeIfNeeded();
+          } else {
+            refreshDisplay('device-ready');
+          }
+        } else {
+          stopYoutubeLcdSample(true);
+          broadcastStatus();
+        }
         return;
       }
       broadcastStatus();
@@ -841,7 +1094,13 @@ if (!gotLock) {
     renderAndSend(currentTrack);
     monitor.start();
     openPlayerWindow();
-    if (youtubeTestRequested) startYoutubeLcdSample();
+    if (youtubeTestRequested) startYoutubeIfNeeded();
+    void readYoutubeAccountState()
+      .then((account) => {
+        youtubeAccount = account;
+        broadcastStatus();
+      })
+      .catch(() => undefined);
   });
 
   app.on('activate', () => openPlayerWindow());

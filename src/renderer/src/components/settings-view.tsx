@@ -3,6 +3,7 @@ import { DeviceStatusSection } from './device-status-section';
 import { DisplaySettingsSection } from './display-settings-section';
 import { KnobSettingsSection } from './knob-settings-section';
 import type { ConfigPatch } from './settings-types';
+import { YoutubeSettingsSection } from './youtube-settings-section';
 
 type SettingsViewProps = {
   status: StatusSnapshot;
@@ -14,6 +15,15 @@ type SettingsViewProps = {
   onReconnect: () => void;
   onReset: () => void;
   onSave: () => Promise<void>;
+  youtubeBusy: boolean;
+  youtubeMessage: string;
+  youtubeError: string;
+  onYoutubeAdd: (input: string) => Promise<void>;
+  onYoutubeRemove: (index: number) => Promise<void>;
+  onYoutubeMove: (index: number, direction: -1 | 1) => Promise<void>;
+  onYoutubePlay: (index: number) => Promise<void>;
+  onYoutubeSignIn: () => Promise<void>;
+  onYoutubeSignOut: () => Promise<void>;
 };
 
 export function SettingsView({
@@ -26,6 +36,15 @@ export function SettingsView({
   onReconnect,
   onReset,
   onSave,
+  youtubeBusy,
+  youtubeMessage,
+  youtubeError,
+  onYoutubeAdd,
+  onYoutubeRemove,
+  onYoutubeMove,
+  onYoutubePlay,
+  onYoutubeSignIn,
+  onYoutubeSignOut,
 }: SettingsViewProps) {
   const settingsDisabled = !status.deviceConnected || !status.protocolReady;
 
@@ -61,6 +80,19 @@ export function SettingsView({
         config={config}
         disabled={settingsDisabled}
         onPatch={onPatch}
+      />
+      <YoutubeSettingsSection
+        status={status}
+        config={config}
+        busy={youtubeBusy}
+        message={youtubeMessage}
+        error={youtubeError}
+        onAdd={onYoutubeAdd}
+        onRemove={onYoutubeRemove}
+        onMove={onYoutubeMove}
+        onPlay={onYoutubePlay}
+        onSignIn={onYoutubeSignIn}
+        onSignOut={onYoutubeSignOut}
       />
 
       <p className="safety">

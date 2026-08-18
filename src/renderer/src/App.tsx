@@ -28,6 +28,9 @@ export function App() {
   const [viewModeChanging, setViewModeChanging] = useState(false);
   const [pendingActionSlot, setPendingActionSlot] = useState<KeyboardSlot | null>(null);
   const [playerActionError, setPlayerActionError] = useState('');
+  const [youtubeBusy, setYoutubeBusy] = useState(false);
+  const [youtubeMessage, setYoutubeMessage] = useState('');
+  const [youtubeError, setYoutubeError] = useState('');
 
   useEffect(() => {
     document.title =
@@ -148,6 +151,30 @@ export function App() {
     setStatus(await window.xpad.reconnectDevice());
   };
 
+  const applyYoutubeResult = (result: Awaited<ReturnType<typeof window.xpad.addYoutubeVideo>>) => {
+    setStatus(result.status);
+    const library = result.config.youtubeLibrary;
+    setConfig((current) => (current ? { ...current, youtubeLibrary: library } : result.config));
+    setSaved((current) => (current ? { ...current, youtubeLibrary: library } : result.config));
+  };
+
+  const runYoutube = async (
+    work: () => ReturnType<typeof window.xpad.addYoutubeVideo>
+  ) => {
+    setYoutubeBusy(true);
+    setYoutubeError('');
+    setYoutubeMessage('');
+    try {
+      applyYoutubeResult(await work());
+      setYoutubeMessage('YouTube 목록을 반영했습니다.');
+      setTimeout(() => setYoutubeMessage(''), 2500);
+    } catch (error) {
+      setYoutubeError(errorMessage(error));
+    } finally {
+      setYoutubeBusy(false);
+    }
+  };
+
   return (
     <main className="app-shell settings-screen">
       <AppHeader
@@ -166,6 +193,17 @@ export function App() {
         onReconnect={() => void reconnectDevice()}
         onReset={() => setConfig(saved)}
         onSave={save}
+        youtubeBusy={youtubeBusy}
+        youtubeMessage={youtubeMessage}
+        youtubeError={youtubeError}
+        onYoutubeAdd={(input) => runYoutube(() => window.xpad.addYoutubeVideo(input))}
+        onYoutubeRemove={(index) => runYoutube(() => window.xpad.removeYoutubeVideo(index))}
+        onYoutubeMove={(index, direction) =>
+          runYoutube(() => window.xpad.moveYoutubeVideo(index, direction))
+        }
+        onYoutubePlay={(index) => runYoutube(() => window.xpad.playYoutubeVideo(index))}
+        onYoutubeSignIn={() => runYoutube(() => window.xpad.signInYoutube())}
+        onYoutubeSignOut={() => runYoutube(() => window.xpad.signOutYoutube())}
       />
     </main>
   );

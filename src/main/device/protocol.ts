@@ -375,7 +375,7 @@ export class XpadProtocol {
           profileBackup[slot] = saved && currentlyMapped ? saved : current;
           const action = settings!.profiles[profileId].assignments[slot];
           profileTargets[slot] =
-            action.type === 'launch-app'
+            action.type === 'launch-app' || action.type === 'youtube-transport'
               ? shortcut
               : currentlyMapped && saved
                 ? saved
@@ -465,7 +465,9 @@ export class XpadProtocol {
       settings &&
         EDITABLE_PROFILE_IDS.some((profileId) =>
           KEYBOARD_SLOTS.some(
-            (slot) => settings.profiles[profileId].assignments[slot].type === 'launch-app'
+            (slot) =>
+              settings.profiles[profileId].assignments[slot].type === 'launch-app' ||
+              settings.profiles[profileId].assignments[slot].type === 'youtube-transport'
           )
         )
     );

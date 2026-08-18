@@ -116,10 +116,18 @@ export const MEDIA_KEY_CODES = [
 ] as const satisfies readonly KeyboardKeyCode[];
 export type MediaKeyCode = (typeof MEDIA_KEY_CODES)[number];
 
+export const YOUTUBE_TRANSPORT_COMMANDS = ['previous', 'play-pause', 'next'] as const;
+export type YoutubeTransportCommand = (typeof YOUTUBE_TRANSPORT_COMMANDS)[number];
+
 export type KeyboardAction =
   | { type: 'key'; keyCode: KeyboardKeyCode }
   | { type: 'launch-app'; appName: string; appPath: string }
+  | { type: 'youtube-transport'; command: YoutubeTransportCommand }
   | { type: 'unsupported'; description: string };
+
+export function isRoutedKeyboardAction(action: KeyboardAction): boolean {
+  return action.type === 'launch-app' || action.type === 'youtube-transport';
+}
 
 export interface KeyboardProfileSettings {
   id: ProfileId;
@@ -211,6 +219,40 @@ export interface TrackInfo {
   artworkDataUrl?: string;
 }
 
+/** P5 기본 샘플. Mix/라디오 ID가 아니라 watch video ID다. */
+export const DEFAULT_YOUTUBE_VIDEO_ID = 'vCFfPqLVp0U';
+export const YOUTUBE_LIBRARY_MAX_ITEMS = 50;
+
+export interface YoutubeVideoItem {
+  videoId: string;
+  title: string;
+  channel: string;
+  addedAt: string;
+}
+
+export interface YoutubeLibrary {
+  items: YoutubeVideoItem[];
+  currentIndex: number;
+}
+
+export interface YoutubePlaybackInfo {
+  videoId: string;
+  title: string;
+  channel: string;
+  state: PlaybackState;
+  duration: number;
+  position: number;
+  signedIn: boolean;
+  adPlaying: boolean;
+  queueIndex: number;
+  queueCount: number;
+}
+
+export interface YoutubeAccountState {
+  signedIn: boolean;
+  label: string;
+}
+
 export interface AppConfig {
   servicePreference: ServicePreference;
   pollIntervalMs: number;
@@ -222,6 +264,7 @@ export interface AppConfig {
   keyboardKeymapBackup?: KeyboardKeymapBackup;
   keyboardSettings: KeyboardSettings;
   launchAtLogin: boolean;
+  youtubeLibrary: YoutubeLibrary;
 }
 
 export interface StatusSnapshot {
@@ -231,6 +274,8 @@ export interface StatusSnapshot {
   monitorError: string | null;
   previewDataUrl: string | null;
   youtubeLcdActive: boolean;
+  youtubePlayback: YoutubePlaybackInfo | null;
+  youtubeAccount: YoutubeAccountState;
   knobFineVolumeState: KnobFineVolumeState;
   knobFineVolumeError: string | null;
   keyboardProfileState: KeyboardProfileState;
@@ -247,6 +292,25 @@ export const EMPTY_TRACK: TrackInfo = {
   position: 0,
 };
 
+export const EMPTY_YOUTUBE_ACCOUNT: YoutubeAccountState = {
+  signedIn: false,
+  label: '로그인 안 됨',
+};
+
+export function createDefaultYoutubeLibrary(): YoutubeLibrary {
+  return {
+    items: [
+      {
+        videoId: DEFAULT_YOUTUBE_VIDEO_ID,
+        title: '',
+        channel: '',
+        addedAt: '2026-01-01T00:00:00.000Z',
+      },
+    ],
+    currentIndex: 0,
+  };
+}
+
 export function createFixedProfileOne(): KeyboardProfileSettings {
   return {
     id: 1,
@@ -256,6 +320,22 @@ export function createFixedProfileOne(): KeyboardProfileSettings {
       right: { type: 'key', keyCode: 'MediaTrackNext' },
     },
   };
+}
+
+export function createFixedYoutubeProfile(): KeyboardProfileSettings {
+  return {
+    id: 5,
+    assignments: {
+      left: { type: 'youtube-transport', command: 'previous' },
+      center: { type: 'youtube-transport', command: 'play-pause' },
+      right: { type: 'youtube-transport', command: 'next' },
+    },
+  };
+}
+
+export interface YoutubeCommandResult {
+  config: AppConfig;
+  status: StatusSnapshot;
 }
 
 export function createDefaultKeyboardSettings(): KeyboardSettings {
@@ -275,7 +355,7 @@ export function createDefaultKeyboardSettings(): KeyboardSettings {
       2: createProfile(2),
       3: createProfile(3),
       4: createProfile(4),
-      5: createProfile(5),
+      5: createFixedYoutubeProfile(),
     },
   };
 }
@@ -289,4 +369,5 @@ export const DEFAULT_CONFIG: AppConfig = {
   fineVolumeStepsPerDetent: 1,
   keyboardSettings: createDefaultKeyboardSettings(),
   launchAtLogin: false,
+  youtubeLibrary: createDefaultYoutubeLibrary(),
 };

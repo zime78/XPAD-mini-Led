@@ -10,12 +10,12 @@ describe('normalizeKeyboardSettings', () => {
       profiles: {},
     });
 
-    expect(settings.enabled).toBe(false);
+    expect(settings.enabled).toBe(true);
     expect(settings.activeProfileId).toBe(1);
     expect(Object.keys(settings.profiles)).toEqual(['1', '2', '3', '4', '5']);
     expect(settings.profiles[5].assignments.center).toEqual({
-      type: 'key',
-      keyCode: 'KeyW',
+      type: 'youtube-transport',
+      command: 'play-pause',
     });
   });
 
@@ -59,12 +59,17 @@ describe('normalizeKeyboardSettings', () => {
       center: { type: 'key', keyCode: 'MediaPlayPause' },
       right: { type: 'key', keyCode: 'MediaTrackNext' },
     });
-    keyCodes.slice(1).forEach((keyCode, index) => {
-      const profileId = (index + 2) as 2 | 3 | 4 | 5;
+    keyCodes.slice(1, 4).forEach((keyCode, index) => {
+      const profileId = (index + 2) as 2 | 3 | 4;
       expect(normalized.profiles[profileId].assignments.left).toEqual({
         type: 'key',
         keyCode,
       });
+    });
+    expect(normalized.profiles[5].assignments).toEqual({
+      left: { type: 'youtube-transport', command: 'previous' },
+      center: { type: 'youtube-transport', command: 'play-pause' },
+      right: { type: 'youtube-transport', command: 'next' },
     });
   });
 

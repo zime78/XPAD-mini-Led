@@ -4,6 +4,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createDefaultKeyboardSettings,
+  createDefaultYoutubeLibrary,
+  EMPTY_YOUTUBE_ACCOUNT,
   type AppConfig,
   type KeyboardRuntimeStatus,
   type KeyboardSettingsBackup,
@@ -20,6 +22,7 @@ const config: AppConfig = {
   fineVolumeStepsPerDetent: 1,
   keyboardSettings: createDefaultKeyboardSettings(),
   launchAtLogin: false,
+  youtubeLibrary: createDefaultYoutubeLibrary(),
 };
 
 const keyboardRuntime: KeyboardRuntimeStatus = {
@@ -58,6 +61,8 @@ const status: StatusSnapshot = {
   monitorError: null,
   previewDataUrl: null,
   youtubeLcdActive: false,
+  youtubePlayback: null,
+  youtubeAccount: EMPTY_YOUTUBE_ACCOUNT,
   knobFineVolumeState: 'active',
   knobFineVolumeError: null,
   keyboardProfileState: {
@@ -123,6 +128,13 @@ describe('XPAD Mini Now Playing 화면', () => {
       pickApplication: vi.fn().mockResolvedValue(null),
       testKeyboardAction: vi.fn().mockResolvedValue({ ok: true, error: null }),
       checkApplicationPath: vi.fn().mockResolvedValue({ ok: true, error: null }),
+      addYoutubeVideo: vi.fn().mockImplementation(async () => ({ config, status })),
+      removeYoutubeVideo: vi.fn().mockImplementation(async () => ({ config, status })),
+      moveYoutubeVideo: vi.fn().mockImplementation(async () => ({ config, status })),
+      playYoutubeVideo: vi.fn().mockImplementation(async () => ({ config, status })),
+      controlYoutube: vi.fn().mockImplementation(async () => ({ config, status })),
+      signInYoutube: vi.fn().mockImplementation(async () => ({ config, status })),
+      signOutYoutube: vi.fn().mockImplementation(async () => ({ config, status })),
       onStatusChanged: vi.fn().mockImplementation((callback: (next: StatusSnapshot) => void) => {
         emitStatus = callback;
         return () => undefined;
@@ -181,6 +193,18 @@ describe('XPAD Mini Now Playing 화면', () => {
       ...status,
       youtubeLcdActive: true,
       previewDataUrl: 'data:image/png;base64,aaa',
+      youtubePlayback: {
+        videoId: 'vCFfPqLVp0U',
+        title: '이예준 피크닉버스킹',
+        channel: '이예준',
+        state: 'playing',
+        duration: 180,
+        position: 12,
+        signedIn: false,
+        adPlaying: false,
+        queueIndex: 0,
+        queueCount: 1,
+      },
       keyboardProfileState: {
         ...status.keyboardProfileState,
         activeProfileId: 5,
@@ -188,15 +212,41 @@ describe('XPAD Mini Now Playing 화면', () => {
     });
     render(<App />);
 
-    const playerPanel = await screen.findByRole('region', { name: 'YouTube' });
+    const playerPanel = await screen.findByRole('region', { name: '이예준 피크닉버스킹' });
     const profile5 = within(playerPanel).getByRole('button', { name: 'Profile 5' });
     expect(profile5.className).toContain('youtube');
     expect(profile5.getAttribute('aria-pressed')).toBe('true');
     expect(within(playerPanel).getByAltText('YouTube LCD 미리보기')).toBeTruthy();
-    expect(within(playerPanel).getByRole('heading', { name: 'YouTube' })).toBeTruthy();
+    expect(within(playerPanel).getByRole('heading', { name: '이예준 피크닉버스킹' })).toBeTruthy();
+    expect(within(playerPanel).getByText('이예준')).toBeTruthy();
+    expect(within(playerPanel).getByText('1 / 1')).toBeTruthy();
+    expect(within(playerPanel).getByText('0:12 / 3:00')).toBeTruthy();
+    expect(within(playerPanel).getByRole('progressbar', { name: '재생 위치' })).toBeTruthy();
+    expect(within(playerPanel).getByText('재생 중')).toBeTruthy();
+    fireEvent.click(
+      within(playerPanel).getByRole('button', { name: '가운데 버튼 동작 실행: 재생/일시정지' })
+    );
+    await waitFor(() => expect(window.xpad.runPlayerAction).toHaveBeenCalledWith('center'));
 
     fireEvent.click(within(playerPanel).getByRole('button', { name: 'Profile 3' }));
     await waitFor(() => expect(window.xpad.switchKeyboardProfile).toHaveBeenCalledWith(3));
+  });
+
+  it('P5 메타가 없으면 기본 안내를 보여준다', async () => {
+    window.xpad.getStatus = vi.fn().mockResolvedValue({
+      ...status,
+      youtubeLcdActive: true,
+      youtubePlayback: null,
+      keyboardProfileState: {
+        ...status.keyboardProfileState,
+        activeProfileId: 5,
+      },
+    });
+    render(<App />);
+
+    const playerPanel = await screen.findByRole('region', { name: '제목 확인 중' });
+    expect(within(playerPanel).getByText('채널 확인 중')).toBeTruthy();
+    expect(within(playerPanel).getByText('준비 중')).toBeTruthy();
   });
 
   it('장치가 준비되지 않았거나 전환 중이면 프로파일 선택을 차단한다', async () => {
@@ -351,6 +401,40 @@ describe('XPAD Mini Now Playing 화면', () => {
     expect((await screen.findByRole('status')).textContent).toBe('설정을 저장했습니다.');
   });
 
+  it('설정에서 YouTube 영상을 목록에 추가한다', async () => {
+    window.history.replaceState({}, '', '/?view=settings');
+    window.xpad.addYoutubeVideo = vi.fn().mockResolvedValue({
+      config: {
+        ...config,
+        youtubeLibrary: {
+          items: [
+            ...config.youtubeLibrary.items,
+            {
+              videoId: 'abcdefghijk',
+              title: '추가한 영상',
+              channel: '채널',
+              addedAt: '2026-08-18T00:00:00.000Z',
+            },
+          ],
+          currentIndex: 0,
+        },
+      },
+      status,
+    });
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: 'YouTube (P5)' })).toBeTruthy();
+    fireEvent.change(screen.getByPlaceholderText('https://www.youtube.com/watch?v=…'), {
+      target: { value: 'https://youtu.be/abcdefghijk' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '추가' }));
+
+    await waitFor(() =>
+      expect(window.xpad.addYoutubeVideo).toHaveBeenCalledWith('https://youtu.be/abcdefghijk')
+    );
+    expect(await screen.findByText('추가한 영상')).toBeTruthy();
+  });
+
   it('장치 연결 또는 프로토콜 준비 실패 시 일반 설정 변경과 저장을 차단한다', async () => {
     window.history.replaceState({}, '', '/?view=settings');
     window.xpad.getStatus = vi.fn().mockResolvedValue({
@@ -405,7 +489,7 @@ describe('XPAD Mini Now Playing 화면', () => {
       { profileId: 2, keyCode: 'KeyB', label: 'B' },
       { profileId: 3, keyCode: 'KeyC', label: 'C' },
       { profileId: 4, keyCode: 'KeyD', label: 'D' },
-      { profileId: 5, keyCode: 'KeyE', label: 'E' },
+      { profileId: 5, keyCode: 'KeyE', label: '이전' },
     ] as const;
     for (const item of expected) {
       profileSettings.profiles[item.profileId].assignments.left = {
@@ -551,8 +635,8 @@ describe('XPAD Mini Now Playing 화면', () => {
     window.history.replaceState({}, '', '/?view=keyboard');
     const restored = createDefaultKeyboardSettings();
     restored.enabled = true;
-    restored.activeProfileId = 5;
-    restored.profiles[5].assignments.left = {
+    restored.activeProfileId = 4;
+    restored.profiles[4].assignments.left = {
       type: 'launch-app',
       appName: 'Finder',
       appPath: '/System/Library/CoreServices/Finder.app',
@@ -579,10 +663,10 @@ describe('XPAD Mini Now Playing 화면', () => {
     fireEvent.click(screen.getByRole('button', { name: '편집 화면에 복원' }));
 
     await waitFor(() => expect(window.xpad.loadKeyboardBackup).toHaveBeenCalledWith('backup-1'));
-    expect(screen.getByRole('tab', { name: /P5 · Profile 5/ }).getAttribute('aria-selected'))
+    expect(screen.getByRole('tab', { name: /P4 · Profile 4/ }).getAttribute('aria-selected'))
       .toBe('true');
     expect(
-      within(screen.getByLabelText('Profile 5 하단 버튼')).getByRole('button', {
+      within(screen.getByLabelText('Profile 4 하단 버튼')).getByRole('button', {
         name: /왼쪽 버튼, 현재 동작 Finder 실행/,
       })
     ).toBeTruthy();

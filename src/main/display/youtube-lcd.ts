@@ -1,10 +1,20 @@
-import { BrowserWindow } from 'electron';
+import { BrowserWindow, session } from 'electron';
 import { PNG } from 'pngjs';
+import {
+  DEFAULT_YOUTUBE_VIDEO_ID,
+  EMPTY_YOUTUBE_ACCOUNT,
+  type PlaybackState,
+  type YoutubeAccountState,
+  type YoutubePlaybackInfo,
+} from '../../shared/types';
 import { LCD_HEIGHT, LCD_WIDTH } from '../device/protocol';
 import { encodeRgb565 } from './frame-pipeline';
 
 /** 사용자가 준 샘플: 이예준 피크닉버스킹 녹화. Mix/라디오 ID는 쓰지 않는다. */
-export const SAMPLE_YOUTUBE_VIDEO_ID = 'vCFfPqLVp0U';
+export const SAMPLE_YOUTUBE_VIDEO_ID = DEFAULT_YOUTUBE_VIDEO_ID;
+export const YOUTUBE_SESSION_PARTITION = 'persist:youtube-lcd';
+const YOUTUBE_USER_AGENT =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
 const VIDEO_ID_PATTERN = /^[A-Za-z0-9_-]{11}$/;
 const VIEW_WIDTH = LCD_WIDTH;
@@ -14,6 +24,8 @@ export const YOUTUBE_QUALITY_PREF = ['tiny', 'small', 'medium'] as const;
 /** HID 천장(~5fps)에 맞춰 뽑는다. 더 빨리 뽑으면 오디오만 끊긴다. */
 const CAPTURE_INTERVAL_MS = 200;
 const FPS_LOG_INTERVAL_MS = 2000;
+/** 제목·상태는 캡처보다 드물게 읽는다. 음성 스레드를 건드리지 않게 1초. */
+const INFO_INTERVAL_MS = 1000;
 
 /** 2초 구간의 횟수·합계를 한 줄 로그로 만든다. */
 export function formatFpsLine(
@@ -85,11 +97,15 @@ class IntervalMeter {
   }
 }
 
+export type YoutubePlayerSnapshot = Omit<YoutubePlaybackInfo, 'queueIndex' | 'queueCount'>;
+
 export interface YouTubeLcdStartOptions {
   videoId: string;
   onFrame: (rgb565: Buffer) => void;
   onPreview?: (dataUrl: string) => void;
   onStopped?: () => void;
+  onInfo?: (info: YoutubePlayerSnapshot) => void;
+  onEnded?: () => void;
 }
 
 /** RGBA를 LCD 미리보기 PNG data URL로 만든다. */
@@ -129,6 +145,48 @@ export function parseYouTubeVideoId(input: string): string | null {
 
   const watchId = url.searchParams.get('v') ?? '';
   return VIDEO_ID_PATTERN.test(watchId) ? watchId : null;
+}
+
+/** YouTube IFrame/watch playerState를 앱 PlaybackState로 바꾼다. */
+export function youtubePlayerStateToPlayback(playerState: number): PlaybackState {
+  if (playerState === 1 || playerState === 3) return 'playing';
+  if (playerState === 2 || playerState === 5) return 'paused';
+  return 'stopped';
+}
+
+function cleanYoutubeTitle(title: string): string {
+  const trimmed = title.replace(/\s*-\s*YouTube\s*$/i, '').trim();
+  if (!trimmed || trimmed.toLowerCase() === 'youtube') return '';
+  return trimmed;
+}
+
+/** executeJavaScript가 준 원시 메타를 상태 스냅샷으로 맞춘다. */
+export function mapYoutubePlayerInfo(raw: unknown): YoutubePlayerSnapshot | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const source = raw as {
+    videoId?: unknown;
+    title?: unknown;
+    channel?: unknown;
+    playerState?: unknown;
+    duration?: unknown;
+    position?: unknown;
+    signedIn?: unknown;
+    adPlaying?: unknown;
+  };
+  const videoId = typeof source.videoId === 'string' ? source.videoId.trim() : '';
+  const title = cleanYoutubeTitle(typeof source.title === 'string' ? source.title : '');
+  const channel = typeof source.channel === 'string' ? source.channel.trim() : '';
+  const playerState = Number(source.playerState);
+  return {
+    videoId: VIDEO_ID_PATTERN.test(videoId) ? videoId : '',
+    title,
+    channel,
+    state: Number.isFinite(playerState) ? youtubePlayerStateToPlayback(playerState) : 'stopped',
+    duration: Math.max(0, Number(source.duration) || 0),
+    position: Math.max(0, Number(source.position) || 0),
+    signedIn: Boolean(source.signedIn),
+    adPlaying: Boolean(source.adPlaying),
+  };
 }
 
 export interface CaptureRect {
@@ -439,8 +497,10 @@ export function watchUrl(videoId: string): string {
   return `https://www.youtube.com/watch?${params.toString()}`;
 }
 
-const PREPARE_PLAYER_SCRIPT = `
+export function preparePlayerScript(wantPlay: boolean): string {
+  return `
 (() => {
+  const wantPlay = ${wantPlay ? 'true' : 'false'};
   const videos = Array.from(document.querySelectorAll('video'));
   const video = videos
     .filter((item) => item.videoWidth > 0)
@@ -495,14 +555,126 @@ const PREPARE_PLAYER_SCRIPT = `
   if (video) {
     video.muted = false;
     video.volume = 1;
-    video.play?.().catch(() => {});
-    return { status: 'playing', quality, isolated: true };
+    if (wantPlay && video.paused && !video.ended) {
+      video.play?.().catch(() => {});
+    }
+    return {
+      status: video.paused ? 'paused' : 'playing',
+      quality,
+      isolated: true,
+    };
   }
-  const play = document.querySelector('button.ytp-large-play-button, button[aria-label*="재생"], button[aria-label*="Play"]');
-  if (play instanceof HTMLElement) play.click();
+  if (wantPlay) {
+    const play = document.querySelector('button.ytp-large-play-button, button[aria-label*="재생"], button[aria-label*="Play"]');
+    if (play instanceof HTMLElement) play.click();
+  }
   return { status: 'waiting', quality, isolated: false };
 })();
 `;
+}
+
+const READ_PLAYER_INFO_SCRIPT = `
+(() => {
+  const player = document.getElementById('movie_player');
+  const video = document.querySelector('video.xpad-lcd-source')
+    || Array.from(document.querySelectorAll('video')).find((item) => item.videoWidth > 0)
+    || document.querySelector('video');
+  const data = player && typeof player.getVideoData === 'function' ? player.getVideoData() : {};
+  const playerState = player && typeof player.getPlayerState === 'function'
+    ? player.getPlayerState()
+    : (video ? (video.paused ? 2 : 1) : -1);
+  const duration = player && typeof player.getDuration === 'function'
+    ? player.getDuration()
+    : (video && Number.isFinite(video.duration) ? video.duration : 0);
+  const position = player && typeof player.getCurrentTime === 'function'
+    ? player.getCurrentTime()
+    : (video ? video.currentTime : 0);
+  const adPlaying = Boolean(
+    player && (player.classList.contains('ad-showing') || player.classList.contains('ad-interrupting'))
+  );
+  const signedIn = /(?:^|;\\s*)(?:__Secure-)?(?:SAPISID|SID|LOGIN_INFO)=/.test(document.cookie);
+  return {
+    videoId: data && data.video_id ? String(data.video_id) : '',
+    title: data && data.title ? String(data.title) : (document.title || ''),
+    channel: data && data.author ? String(data.author) : '',
+    playerState,
+    duration,
+    position,
+    signedIn,
+    adPlaying,
+  };
+})();
+`;
+
+const CONTROL_PLAY_PAUSE_SCRIPT = `
+(() => {
+  const player = document.getElementById('movie_player');
+  if (player && typeof player.getPlayerState === 'function') {
+    const state = player.getPlayerState();
+    if (state === 1 || state === 3) {
+      if (typeof player.pauseVideo === 'function') player.pauseVideo();
+      return { status: 'paused' };
+    }
+    if (typeof player.playVideo === 'function') player.playVideo();
+    return { status: 'playing' };
+  }
+  const video = document.querySelector('video');
+  if (!video) return { status: 'missing' };
+  if (video.paused) {
+    void video.play();
+    return { status: 'playing' };
+  }
+  video.pause();
+  return { status: 'paused' };
+})();
+`;
+
+const SKIP_AD_SCRIPT = `
+(() => {
+  const player = document.getElementById('movie_player');
+  if (!player || !(player.classList.contains('ad-showing') || player.classList.contains('ad-interrupting'))) {
+    return { skipped: false };
+  }
+  const skip = document.querySelector(
+    '.ytp-ad-skip-button, .ytp-ad-skip-button-modern, button.ytp-skip-ad-button, .ytp-ad-skip-button-container button'
+  );
+  if (skip instanceof HTMLElement) {
+    skip.click();
+    return { skipped: true };
+  }
+  return { skipped: false };
+})();
+`;
+
+function loadVideoScript(videoId: string): string {
+  return `
+(() => {
+  const player = document.getElementById('movie_player');
+  if (player && typeof player.loadVideoById === 'function') {
+    player.loadVideoById(${JSON.stringify(videoId)});
+    return { status: 'loaded' };
+  }
+  return { status: 'missing' };
+})();
+`;
+}
+
+export async function readYoutubeAccountState(): Promise<YoutubeAccountState> {
+  const cookies = await session.fromPartition(YOUTUBE_SESSION_PARTITION).cookies.get({
+    domain: '.youtube.com',
+  });
+  const signedIn = cookies.some((cookie) =>
+    ['SAPISID', 'LOGIN_INFO', '__Secure-1PSID', '__Secure-3PSID'].includes(cookie.name)
+  );
+  return {
+    signedIn,
+    label: signedIn ? '연결됨' : EMPTY_YOUTUBE_ACCOUNT.label,
+  };
+}
+
+export async function clearYoutubeSession(): Promise<void> {
+  await session.fromPartition(YOUTUBE_SESSION_PARTITION).clearStorageData();
+}
 
 /**
  * 공식 YouTube watch 페이지를 띄운다. 음성은 이 창에서 끊기지 않게 재생하고,
@@ -512,7 +684,13 @@ export class YouTubeLcdPlayer {
   private window: BrowserWindow | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
   private playTimer: ReturnType<typeof setInterval> | null = null;
+  private infoTimer: ReturnType<typeof setInterval> | null = null;
   private onStopped: (() => void) | null = null;
+  private onEnded: (() => void) | null = null;
+  private currentVideoId = '';
+  private lastEndedVideoId: string | null = null;
+  private userPaused = false;
+  private signInWindow: BrowserWindow | null = null;
   private capturing = false;
   private lastLoggedQuality: string | null = null;
   private lastLoggedTap: string | null = null;
@@ -525,6 +703,10 @@ export class YouTubeLcdPlayer {
   start(options: YouTubeLcdStartOptions): void {
     this.stop({ silent: true });
     this.onStopped = options.onStopped ?? null;
+    this.onEnded = options.onEnded ?? null;
+    this.currentVideoId = options.videoId;
+    this.lastEndedVideoId = null;
+    this.userPaused = false;
 
     const window = new BrowserWindow({
       title: 'XPAD YouTube LCD',
@@ -546,7 +728,7 @@ export class YouTubeLcdPlayer {
         sandbox: false,
         webSecurity: true,
         autoplayPolicy: 'no-user-gesture-required',
-        partition: 'persist:youtube-lcd',
+        partition: YOUTUBE_SESSION_PARTITION,
       },
     });
     this.window = window;
@@ -556,9 +738,7 @@ export class YouTubeLcdPlayer {
     );
     window.setMenuBarVisibility(false);
     window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-    window.webContents.setUserAgent(
-      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
-    );
+    window.webContents.setUserAgent(YOUTUBE_USER_AGENT);
 
     window.on('closed', () => {
       this.clearTimer();
@@ -576,10 +756,10 @@ export class YouTubeLcdPlayer {
     const prepare = () => {
       if (this.window !== window || window.isDestroyed()) return;
       void window.webContents
-        .executeJavaScript(PREPARE_PLAYER_SCRIPT)
+        .executeJavaScript(preparePlayerScript(!this.userPaused))
         .then((result) => {
           const info = result as { status?: string; quality?: string | null } | null;
-          if (info?.status === 'playing') {
+          if (info?.status === 'playing' || info?.status === 'paused') {
             const quality = info.quality ?? 'unknown';
             if (quality !== this.lastLoggedQuality) {
               this.lastLoggedQuality = quality;
@@ -599,12 +779,94 @@ export class YouTubeLcdPlayer {
           void this.capture(window, options.onFrame, options.onPreview);
         }, CAPTURE_INTERVAL_MS);
       }
+      if (!this.infoTimer && options.onInfo) {
+        const emitInfo = () => {
+          void this.readInfo(window, options.onInfo);
+        };
+        emitInfo();
+        this.infoTimer = setInterval(emitInfo, INFO_INTERVAL_MS);
+      }
     });
     this.playTimer = setInterval(prepare, 2000);
   }
 
+  async controlPlayPause(): Promise<void> {
+    const window = this.requireWindow();
+    const result = (await window.webContents.executeJavaScript(CONTROL_PLAY_PAUSE_SCRIPT)) as {
+      status?: string;
+    } | null;
+    if (result?.status === 'missing') {
+      throw new Error('YouTube 재생기를 찾지 못했습니다.');
+    }
+    this.userPaused = result?.status === 'paused';
+  }
+
+  async load(videoId: string): Promise<void> {
+    const window = this.requireWindow();
+    this.currentVideoId = videoId;
+    this.lastEndedVideoId = null;
+    this.userPaused = false;
+    try {
+      const result = (await window.webContents.executeJavaScript(loadVideoScript(videoId))) as {
+        status?: string;
+      } | null;
+      if (result?.status === 'loaded') return;
+    } catch {
+      // watch 페이지 재로드로 폴백한다.
+    }
+    await window.loadURL(watchUrl(videoId), {
+      extraHeaders: 'Referer: https://www.youtube.com/\r\n',
+      httpReferrer: 'https://www.youtube.com/',
+    });
+  }
+
+  async openSignInWindow(): Promise<YoutubeAccountState> {
+    if (this.signInWindow && !this.signInWindow.isDestroyed()) {
+      this.signInWindow.show();
+      this.signInWindow.focus();
+      return readYoutubeAccountState();
+    }
+    try {
+      await this.window?.webContents.executeJavaScript(CONTROL_PLAY_PAUSE_SCRIPT);
+    } catch {
+      // 로그인 창을 여는 것이 우선이다.
+    }
+    const login = new BrowserWindow({
+      title: 'YouTube 계정 연결',
+      width: 960,
+      height: 720,
+      autoHideMenuBar: true,
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: false,
+        webSecurity: true,
+        partition: YOUTUBE_SESSION_PARTITION,
+      },
+    });
+    this.signInWindow = login;
+    login.webContents.setUserAgent(YOUTUBE_USER_AGENT);
+    login.webContents.setWindowOpenHandler(() => ({ action: 'allow' }));
+    await login.loadURL(
+      'https://accounts.google.com/ServiceLogin?service=youtube&continue=https://www.youtube.com/'
+    );
+    await new Promise<void>((resolve) => {
+      login.once('closed', () => resolve());
+    });
+    this.signInWindow = null;
+    return readYoutubeAccountState();
+  }
+
   stop(options: { silent?: boolean } = {}): void {
     this.clearTimer();
+    this.onEnded = null;
+    this.lastEndedVideoId = null;
+    this.userPaused = false;
+    this.currentVideoId = '';
+    if (this.signInWindow && !this.signInWindow.isDestroyed()) {
+      this.signInWindow.destroy();
+    }
+    this.signInWindow = null;
     const window = this.window;
     this.window = null;
     if (options.silent) this.onStopped = null;
@@ -622,6 +884,8 @@ export class YouTubeLcdPlayer {
     this.timer = null;
     if (this.playTimer) clearInterval(this.playTimer);
     this.playTimer = null;
+    if (this.infoTimer) clearInterval(this.infoTimer);
+    this.infoTimer = null;
     this.capturing = false;
     this.lastLoggedQuality = null;
     this.lastLoggedTap = null;
@@ -673,6 +937,39 @@ export class YouTubeLcdPlayer {
       this.meter.drop();
     } finally {
       this.capturing = false;
+    }
+  }
+
+  private requireWindow(): BrowserWindow {
+    const window = this.window;
+    if (!window || window.isDestroyed()) {
+      throw new Error('YouTube 재생 창이 없습니다.');
+    }
+    return window;
+  }
+
+  private async readInfo(
+    window: BrowserWindow,
+    onInfo?: (info: YoutubePlayerSnapshot) => void
+  ): Promise<void> {
+    if (window.isDestroyed()) return;
+    try {
+      await window.webContents.executeJavaScript(SKIP_AD_SCRIPT);
+      const raw = await window.webContents.executeJavaScript(READ_PLAYER_INFO_SCRIPT);
+      const info = mapYoutubePlayerInfo(raw);
+      if (info) onInfo?.(info);
+      const playerState = Number((raw as { playerState?: unknown } | null)?.playerState);
+      if (
+        playerState === 0 &&
+        info?.videoId &&
+        info.videoId === this.currentVideoId &&
+        this.lastEndedVideoId !== info.videoId
+      ) {
+        this.lastEndedVideoId = info.videoId;
+        this.onEnded?.();
+      }
+    } catch {
+      // 다음 주기에서 다시 읽는다.
     }
   }
 

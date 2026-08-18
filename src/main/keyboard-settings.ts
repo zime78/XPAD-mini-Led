@@ -1,8 +1,10 @@
 import path from 'node:path';
 import {
   createFixedProfileOne,
+  createFixedYoutubeProfile,
   createDefaultKeyboardSettings,
   EDITABLE_PROFILE_IDS,
+  isRoutedKeyboardAction,
   KeyboardAction,
   KeyboardDeviceSnapshot,
   KEYBOARD_KEY_CODES,
@@ -11,6 +13,7 @@ import {
   KeyboardSettings,
   PROFILE_IDS,
   ProfileId,
+  YOUTUBE_TRANSPORT_COMMANDS,
 } from '../shared/types';
 
 export function mergeKeyboardDeviceSnapshot(
@@ -20,17 +23,18 @@ export function mergeKeyboardDeviceSnapshot(
   const local = normalizeKeyboardSettings(localSettings);
   const profiles = structuredClone(snapshot.profiles);
   profiles[1] = createFixedProfileOne();
+  profiles[5] = createFixedYoutubeProfile();
 
   for (const profileId of EDITABLE_PROFILE_IDS) {
     for (const slot of KEYBOARD_SLOTS) {
       const localAction = local.profiles[profileId].assignments[slot];
-      // 앱 실행은 장치의 F16~F18 값을 해석한 결과가 아니라 앱의 논리 설정이다.
-      // 장치 재조회가 해당 값을 미지원으로 보고해도 저장된 앱 연결을 유지한다.
+      // 앱 실행·유튜브 전송은 장치의 F16~F18 값이 아니라 앱의 논리 설정이다.
       if (localAction.type === 'launch-app') {
         profiles[profileId].assignments[slot] = localAction;
       }
     }
   }
+  profiles[5] = createFixedYoutubeProfile();
 
   return {
     enabled: local.enabled,
@@ -54,6 +58,10 @@ export function normalizeKeyboardSettings(value: unknown): KeyboardSettings {
       profiles[id] = createFixedProfileOne();
       continue;
     }
+    if (id === 5) {
+      profiles[id] = createFixedYoutubeProfile();
+      continue;
+    }
     const source = isRecord(sourceProfiles[id]) ? sourceProfiles[id] : {};
     const assignments = isRecord(source.assignments) ? source.assignments : {};
     const fallback = defaults.profiles[id].assignments;
@@ -71,8 +79,8 @@ export function normalizeKeyboardSettings(value: unknown): KeyboardSettings {
     enabled:
       (typeof value.enabled === 'boolean' ? value.enabled : defaults.enabled) ||
       EDITABLE_PROFILE_IDS.some((profileId) =>
-        KEYBOARD_SLOTS.some(
-          (slot) => profiles[profileId].assignments[slot].type === 'launch-app'
+        KEYBOARD_SLOTS.some((slot) =>
+          isRoutedKeyboardAction(profiles[profileId].assignments[slot])
         )
       ),
     activeProfileId,
@@ -112,6 +120,18 @@ export function parseKeyboardAction(value: unknown): KeyboardAction | null {
       next: 'MediaTrackNext',
     } as const;
     return { type: 'key', keyCode: legacyKeyCode[value.command] };
+  }
+  if (
+    value.type === 'youtube-transport' &&
+    typeof value.command === 'string' &&
+    YOUTUBE_TRANSPORT_COMMANDS.includes(
+      value.command as (typeof YOUTUBE_TRANSPORT_COMMANDS)[number]
+    )
+  ) {
+    return {
+      type: 'youtube-transport',
+      command: value.command as (typeof YOUTUBE_TRANSPORT_COMMANDS)[number],
+    };
   }
   if (
     value.type === 'launch-app' &&

@@ -1,7 +1,15 @@
 import { PNG } from 'pngjs';
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('electron', () => ({ BrowserWindow: class {} }));
+vi.mock('electron', () => ({
+  BrowserWindow: class {},
+  session: {
+    fromPartition: () => ({
+      cookies: { get: async () => [] },
+      clearStorageData: async () => undefined,
+    }),
+  },
+}));
 import {
   coverCrop,
   encodeCapturedPng,
@@ -9,11 +17,14 @@ import {
   formatFpsLine,
   rgbaToPngDataUrl,
   lcdCaptureRect,
+  mapYoutubePlayerInfo,
   parseYouTubeVideoId,
+  preparePlayerScript,
   SAMPLE_YOUTUBE_VIDEO_ID,
   unwrapPixelBytes,
   videoCoverSourceRect,
   watchUrl,
+  youtubePlayerStateToPlayback,
 } from './youtube-lcd';
 
 describe('parseYouTubeVideoId', () => {
@@ -63,6 +74,51 @@ describe('coverCrop and lcdCaptureRect', () => {
     expect(cover.width).toBeCloseTo(240);
     expect(cover.height).toBeCloseTo(135);
     expect(cover.x).toBeCloseTo(80);
+  });
+});
+
+describe('mapYoutubePlayerInfo', () => {
+  it('maps player state, strips the YouTube suffix, and flags ads', () => {
+    expect(youtubePlayerStateToPlayback(1)).toBe('playing');
+    expect(youtubePlayerStateToPlayback(2)).toBe('paused');
+    expect(youtubePlayerStateToPlayback(0)).toBe('stopped');
+    expect(
+      mapYoutubePlayerInfo({
+        videoId: SAMPLE_YOUTUBE_VIDEO_ID,
+        title: '피크닉버스킹 - YouTube',
+        channel: '이예준',
+        playerState: 1,
+        duration: 180.4,
+        position: 12.2,
+        signedIn: true,
+        adPlaying: true,
+      })
+    ).toEqual({
+      videoId: SAMPLE_YOUTUBE_VIDEO_ID,
+      title: '피크닉버스킹',
+      channel: '이예준',
+      state: 'playing',
+      duration: 180.4,
+      position: 12.2,
+      signedIn: true,
+      adPlaying: true,
+    });
+  });
+
+  it('returns an empty snapshot for junk input instead of throwing', () => {
+    expect(mapYoutubePlayerInfo(null)).toBeNull();
+    expect(mapYoutubePlayerInfo({ title: 'YouTube', playerState: 'x' })?.title).toBe('');
+    expect(mapYoutubePlayerInfo({ title: 'YouTube', playerState: 'x' })?.state).toBe('stopped');
+  });
+});
+
+describe('preparePlayerScript', () => {
+  it('does not force play when the user paused', () => {
+    const paused = preparePlayerScript(false);
+    const playing = preparePlayerScript(true);
+    expect(paused).toContain('const wantPlay = false');
+    expect(playing).toContain('const wantPlay = true');
+    expect(paused).toContain('if (wantPlay && video.paused && !video.ended)');
   });
 });
 

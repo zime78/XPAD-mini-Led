@@ -9,6 +9,7 @@ import {
   KEYBOARD_SLOTS,
   KnobKeymapBackup,
 } from '../shared/types';
+import { normalizeYoutubeLibrary } from './display/youtube-library';
 import { normalizeKeyboardSettings } from './keyboard-settings';
 
 const KEY_INFO_BASE64_LENGTH = 76;
@@ -60,6 +61,7 @@ function normalize(config: AppConfig): AppConfig {
     ...(keyboardKeymapBackup ? { keyboardKeymapBackup } : {}),
     keyboardSettings: normalizeKeyboardSettings(config.keyboardSettings),
     launchAtLogin: Boolean(config.launchAtLogin),
+    youtubeLibrary: normalizeYoutubeLibrary(config.youtubeLibrary),
   };
 }
 

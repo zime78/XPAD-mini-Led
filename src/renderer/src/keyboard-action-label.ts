@@ -1,8 +1,15 @@
 import type { KeyboardAction, KeyboardKeyCode } from '../../shared/types';
 
+const YOUTUBE_TRANSPORT_LABELS = {
+  previous: '이전',
+  'play-pause': '재생/일시정지',
+  next: '다음',
+} as const;
+
 export function keyboardActionLabel(action: KeyboardAction): string {
   if (action.type === 'key') return keyboardKeyCodeLabel(action.keyCode);
   if (action.type === 'launch-app') return `${action.appName} 실행`;
+  if (action.type === 'youtube-transport') return YOUTUBE_TRANSPORT_LABELS[action.command];
   return '미지원';
 }
 

@@ -86,6 +86,8 @@ describe('XpadProtocol.configureKeyboardAppMappings', () => {
     expect(bulk.firstKeyWriteReadCount).toBe(12);
     expect(bulk.keyWrites.map(({ profileIndex, index }) => [profileIndex, index])).toEqual([
       [1, 0],
+      [4, 0],
+      [4, 1],
       [4, 2],
     ]);
     expect(keyUsage(bulk.entry(1, 0))).toBe(0x6b);

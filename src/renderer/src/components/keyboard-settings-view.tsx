@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   createFixedProfileOne,
+  createFixedYoutubeProfile,
   EDITABLE_PROFILE_IDS,
+  isRoutedKeyboardAction,
   KEYBOARD_SLOTS,
   KeyboardAction,
   KeyboardBackupList,
@@ -15,6 +17,7 @@ import {
   PROFILE_IDS,
   ProfileId,
   StatusSnapshot,
+  YOUTUBE_PROFILE_ID,
 } from '../../../shared/types';
 import { AppHeader } from './app-header';
 import {
@@ -129,6 +132,7 @@ export function KeyboardSettingsView({ status, onClose }: KeyboardSettingsViewPr
     try {
       const nextSettings = await window.xpad.getKeyboardSettings();
       nextSettings.profiles[1] = createFixedProfileOne();
+      nextSettings.profiles[5] = createFixedYoutubeProfile();
       setSettings(nextSettings);
       setSaved(nextSettings);
       setSelectedProfileId(nextSettings.activeProfileId);
@@ -201,13 +205,14 @@ export function KeyboardSettingsView({ status, onClose }: KeyboardSettingsViewPr
   );
   const hasAppMappings = settings
     ? EDITABLE_PROFILE_IDS.some((profileId) =>
-        KEYBOARD_SLOTS.some(
-          (slot) => settings.profiles[profileId].assignments[slot].type === 'launch-app'
+        KEYBOARD_SLOTS.some((slot) =>
+          isRoutedKeyboardAction(settings.profiles[profileId].assignments[slot])
         )
       )
     : false;
   const settingsDisabled = !status.deviceConnected || !status.protocolReady;
-  const profileIsFixed = selectedProfileId === 1;
+  const profileIsFixed =
+    selectedProfileId === 1 || selectedProfileId === YOUTUBE_PROFILE_ID;
 
   if (!runtime || !backups) {
     return <main className="loading-screen">키보드 설정 불러오는 중…</main>;
@@ -388,6 +393,7 @@ export function KeyboardSettingsView({ status, onClose }: KeyboardSettingsViewPr
     try {
       const restored = await window.xpad.loadKeyboardBackup(backup.id);
       restored.profiles[1] = createFixedProfileOne();
+      restored.profiles[5] = createFixedYoutubeProfile();
       setSettings(restored);
       setSelectedProfileId(restored.activeProfileId);
       setSelectedSlot('left');
@@ -404,7 +410,7 @@ export function KeyboardSettingsView({ status, onClose }: KeyboardSettingsViewPr
     <main className="app-shell keyboard-screen">
       <AppHeader
         title="키보드 설정"
-        subtitle="Profile 1은 음악 제어 고정이며, Profile 2~5의 하단 버튼 3개만 설정합니다."
+        subtitle="Profile 1은 음악 제어, Profile 5는 YouTube 전송 고정이며, Profile 2~4의 하단 버튼 3개만 설정합니다."
         closeLabel="키보드 설정 창 닫기"
         onClose={onClose}
       />
@@ -462,7 +468,9 @@ export function KeyboardSettingsView({ status, onClose }: KeyboardSettingsViewPr
                 className={selectedProfileId === profileId ? 'active' : ''}
                 onClick={() => setProfile(profileId)}
               >
-                P{profileId} · Profile {profileId}{profileId === 1 ? ' · 고정' : ''}
+                P{profileId} · Profile {profileId}
+                {profileId === 1 ? ' · 고정' : ''}
+                {profileId === YOUTUBE_PROFILE_ID ? ' · YouTube' : ''}
                 {settings.activeProfileId === profileId && (
                   <span className="profile-runtime-badge">사용 중</span>
                 )}
@@ -479,9 +487,11 @@ export function KeyboardSettingsView({ status, onClose }: KeyboardSettingsViewPr
               <div className="scope-lock">
                 <strong>Profile {selectedProfileId} {profileIsFixed ? '고정 설정' : '장치 설정'}</strong>
                 <span>
-                  {profileIsFixed
+                  {selectedProfileId === 1
                     ? '음악 제어 전용이며 변경할 수 없습니다.'
-                    : '장치에서 읽은 하단 세 버튼 값을 표시합니다.'}
+                    : selectedProfileId === YOUTUBE_PROFILE_ID
+                      ? 'YouTube 이전·재생/일시정지·다음이며 변경할 수 없습니다.'
+                      : '장치에서 읽은 하단 세 버튼 값을 표시합니다.'}
                 </span>
               </div>
               <div className="device-keys" aria-label={`Profile ${selectedProfileId} 하단 버튼`}>
@@ -515,8 +525,14 @@ export function KeyboardSettingsView({ status, onClose }: KeyboardSettingsViewPr
 
               {profileIsFixed ? (
                 <div className="fixed-profile-notice" role="note">
-                  <strong>Profile 1 고정</strong>
-                  <span>왼쪽은 이전 곡, 가운데는 재생/일시정지, 오른쪽은 다음 곡입니다.</span>
+                  <strong>
+                    {selectedProfileId === YOUTUBE_PROFILE_ID ? 'Profile 5 YouTube 고정' : 'Profile 1 고정'}
+                  </strong>
+                  <span>
+                    {selectedProfileId === YOUTUBE_PROFILE_ID
+                      ? '왼쪽은 이전 영상, 가운데는 재생/일시정지, 오른쪽은 다음 영상입니다.'
+                      : '왼쪽은 이전 곡, 가운데는 재생/일시정지, 오른쪽은 다음 곡입니다.'}
+                  </span>
                 </div>
               ) : (
                 <>

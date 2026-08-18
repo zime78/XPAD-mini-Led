@@ -11,6 +11,14 @@ import {
   PlayerViewModeButton,
   SettingsButton,
 } from './app-header';
+import {
+  youtubePlaybackChannel,
+  youtubePlaybackProgress,
+  youtubePlaybackQueueLabel,
+  youtubePlaybackStateLabel,
+  youtubePlaybackTimeLabel,
+  youtubePlaybackTitle,
+} from '../youtube-playback-label';
 import { PlayerStatus } from './player-status';
 import { QuickProfileSwitch } from './quick-profile-switch';
 
@@ -55,6 +63,10 @@ export function PlayerView({
 }: PlayerViewProps) {
   const track = status.track;
   const mini = viewMode === 'mini';
+  const youtubeTitle = youtubePlaybackTitle(status.youtubePlayback);
+  const youtubeQueue = youtubePlaybackQueueLabel(status.youtubePlayback);
+  const youtubeTime = youtubePlaybackTimeLabel(status.youtubePlayback);
+  const youtubeProgress = youtubePlaybackProgress(status.youtubePlayback);
   const activeProfile =
     status.keyboardProfileState.profiles[status.keyboardProfileState.activeProfileId];
 
@@ -101,7 +113,12 @@ export function PlayerView({
               </button>
             )}
             <span className="player-toolbar-separator" aria-hidden="true" />
-            <QuickProfileSwitch status={status} onSelect={onSelectProfile} />
+            <QuickProfileSwitch
+              status={status}
+              pendingActionSlot={pendingActionSlot}
+              onSelect={onSelectProfile}
+              onRunAction={onRunAction}
+            />
           </div>
         )}
         <div className="player-toolbar-actions">
@@ -114,7 +131,11 @@ export function PlayerView({
           />
         </div>
       </div>
-      {mini && actionError && <p className="mini-player-action-error" role="alert">{actionError}</p>}
+      {actionError && (
+        <p className={mini ? 'mini-player-action-error' : 'quick-profile-error'} role="alert">
+          {actionError}
+        </p>
+      )}
       <div className={`player-content ${mini ? 'mini-player-content' : ''}`}>
         <div className={`lcd-shell ${status.youtubeLcdActive ? 'youtube' : ''}`}>
           {status.previewDataUrl ? (
@@ -133,9 +154,29 @@ export function PlayerView({
             {status.youtubeLcdActive ? (
               <>
                 <span className="badge youtube">YouTube</span>
-                <h2 id="current-track-title">YouTube</h2>
-                <p>P5 고정 영상</p>
-                <div className="playback-state">재생 중</div>
+                <h2 id="current-track-title">{youtubeTitle}</h2>
+                <p>{youtubePlaybackChannel(status.youtubePlayback)}</p>
+                {youtubeQueue && <small>{youtubeQueue}</small>}
+                {youtubeTime && (
+                  <div className="youtube-progress">
+                    {youtubeProgress !== null && (
+                      <div
+                        className="youtube-progress-bar"
+                        role="progressbar"
+                        aria-label="재생 위치"
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-valuenow={Math.round(youtubeProgress)}
+                      >
+                        <span style={{ width: `${youtubeProgress}%` }} />
+                      </div>
+                    )}
+                    <small>{youtubeTime}</small>
+                  </div>
+                )}
+                <div className="playback-state">
+                  {youtubePlaybackStateLabel(status.youtubePlayback)}
+                </div>
               </>
             ) : (
               <>

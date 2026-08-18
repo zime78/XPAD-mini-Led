@@ -13,6 +13,8 @@ import type {
   PlayerViewMode,
   ProfileId,
   StatusSnapshot,
+  YoutubeCommandResult,
+  YoutubeTransportCommand,
 } from '../shared/types';
 
 const api = {
@@ -65,6 +67,18 @@ const api = {
     ipcRenderer.invoke('test-keyboard-action', action),
   checkApplicationPath: (appPath: string): Promise<KeyboardActionResult> =>
     ipcRenderer.invoke('check-application-path', appPath),
+  addYoutubeVideo: (input: string): Promise<YoutubeCommandResult> =>
+    ipcRenderer.invoke('youtube-library-add', input),
+  removeYoutubeVideo: (index: number): Promise<YoutubeCommandResult> =>
+    ipcRenderer.invoke('youtube-library-remove', index),
+  moveYoutubeVideo: (index: number, direction: -1 | 1): Promise<YoutubeCommandResult> =>
+    ipcRenderer.invoke('youtube-library-move', index, direction),
+  playYoutubeVideo: (index: number): Promise<YoutubeCommandResult> =>
+    ipcRenderer.invoke('youtube-library-play', index),
+  controlYoutube: (command: YoutubeTransportCommand): Promise<YoutubeCommandResult> =>
+    ipcRenderer.invoke('youtube-control', command),
+  signInYoutube: (): Promise<YoutubeCommandResult> => ipcRenderer.invoke('youtube-sign-in'),
+  signOutYoutube: (): Promise<YoutubeCommandResult> => ipcRenderer.invoke('youtube-sign-out'),
   onStatusChanged: (callback: (status: StatusSnapshot) => void): (() => void) => {
     const listener = (_event: unknown, status: StatusSnapshot) => callback(status);
     ipcRenderer.on('status-changed', listener);
