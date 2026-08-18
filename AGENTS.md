@@ -1,3 +1,6 @@
+<!-- Generated: 2026-08-18 | Updated: 2026-08-18 -->
+<!-- MANUAL:START Official repository guidelines. Preserve through MANUAL:END. Hierarchical maps live in subdirectory AGENTS.md files. -->
+
 # Repository Guidelines
 
 Pulsar Lab XPAD Mini(VID `0x3710`, PID `0x2507`)의 240×135 LCD에 macOS의 Spotify / Apple Music 현재 재생 곡(곡명·아티스트·앨범·앨범아트·진행률)을 표시하는 Electron 트레이 앱. 패키지명 `xpad-mini-now-playing`, 제품명 "XPAD Mini Now Playing". 이전 세대인 Claude Code 상태 표시 앱(MIT, `SpinnerMaster/xpad-mini-claude-code`)의 HID 프로토콜 구현을 물려받아 음악 표시 전용으로 피벗한 프로젝트다.
@@ -37,8 +40,8 @@ electron-vite 3분할(`src/main`, `src/preload`, `src/renderer`) + Node worker t
 데이터 흐름, 끝에서 끝까지:
 
 1. **음악 폴링.** `music/now-playing.ts`의 `NowPlayingMonitor`가 `pollIntervalMs`(기본 1500ms, 750–10000 클램프) 주기로 osascript AppleScript를 통해 Spotify·Music 앱을 병렬 조회한다(pgrep로 해당 앱이 실행 중일 때만). 트랙 선택 우선순위: 명시 선호 서비스가 재생 중 > 재생 중 트랙(직전 활성 서비스 우대) > 일시정지 트랙. 앨범아트는 Spotify는 artwork URL fetch, Apple Music은 AppleScript `raw data`를 temp 파일로 내보내 읽고, data URL로 최대 12개 캐시한다. 변경 시 `change` 이벤트 발생.
-2. **프레임 렌더링.** `display/frame-renderer.ts`가 트랙 정보를 SVG로 구성해 숨김 offscreen `BrowserWindow`에 로드 → `capturePage` → PNG → RGB565-LE `Buffer`(240×135×2)로 변환한다. 설정 UI 미리보기용 PNG data URL도 함께 반환. 폰트는 Apple SD Gothic Neo(한글 지원), 서비스별 액센트 색(#1ed760 / #fa2d48).
-3. **오케스트레이션.** `main/index.ts`: single-instance lock, 트레이, 재생/설정/키보드 창, IPC(`get-status`/`get-config`/`set-config`/`refresh-now-playing`/`switch-keyboard-profile`, push `status-changed` — preload가 `window.xpad`로 노출). 실제 장치 프로필 readback을 설정과 `KeyActionRouter`의 F16~F18 대상 프로필에 동기화한다. 렌더 큐는 시퀀스 번호로 최신 요청만 장치에 반영한다(stale 렌더 드롭). `diagnostic-log.ts`는 노브 단축키 수신과 볼륨 적용 전후 숫자만 `userData/logs/fine-volume.jsonl`에 최대 1MiB로 기록한다. 종료 시 monitor 정지 후 노브 원본 복원을 포함한 worker shutdown을 최대 4초 기다리고 로그 쓰기를 flush한다.
+2. **프레임 렌더링.** 음악 모드는 `display/frame-renderer.ts`가 트랙 정보를 SVG로 구성해 숨김 offscreen `BrowserWindow`에 로드 → `capturePage` → PNG → RGB565-LE `Buffer`(240×135×2)로 변환한다. YouTube(P5)는 `display/youtube-lcd.ts`가 같은 `persist:youtube-lcd` 세션으로 숨은 창을 둘로 나눈다. 소리 창은 공식 watch를 재생만 하고 `getImageData`를 하지 않는다. LCD 창은 음소거·`tiny` 고정 후 200ms마다 240×135 RGBA를 뽑아 RGB565로 바꾼다. 앱 미리보기는 그 RGB565를 PNG로 복원해 기기와 같은 장·같은 주기로 보여 준다. 폰트는 Apple SD Gothic Neo(한글 지원), 서비스별 액센트 색(#1ed760 / #fa2d48).
+3. **오케스트레이션.** `main/index.ts`: single-instance lock, 트레이, 재생/설정/키보드 창, IPC(`get-status`/`get-config`/`set-config`/`refresh-now-playing`/`switch-keyboard-profile`, push `status-changed` — preload가 `window.xpad`로 노출). 실제 장치 프로필 readback을 설정과 `KeyActionRouter`의 F16~F18 대상 프로필에 동기화한다. 렌더 큐는 시퀀스 번호로 최신 요청만 장치에 반영한다(stale 렌더 드롭). `diagnostic-log.ts`는 노브 단축키 수신·볼륨 적용 전후 숫자와 YouTube 화질/볼륨/광고 전환(`youtube-audio`)만 `userData/logs/fine-volume.jsonl`에 최대 1MiB로 기록한다. 종료 시 monitor 정지 후 노브 원본 복원을 포함한 worker shutdown을 최대 4초 기다리고 로그 쓰기를 flush한다.
 4. **디바이스 워커.** `device/device-host.ts`는 얇은 main-thread 프록시이고, 실제 HID I/O는 worker thread(`device/device-worker.ts`, `electron.vite.config.ts`의 두 번째 rollup entry)가 수행한다. ready 상태에서는 현재 프레임을 220ms마다 재전송해 펌웨어 자체 UI가 되살아나지 않게 유지하며, KeyInfo 읽기/쓰기 중에는 LCD 전송을 잠시 멈춘다.
 5. **HID 계층.** `device/hid.ts`는 vendor bulk 컬렉션(usage page `0xFF12`, usage `0x02`)만 연다. 복합 키보드 장치라 macOS Input Monitoring 허용을 위해 `nonExclusive: true`가 필수. 3초 주기로 재연결 폴링.
 6. **프로토콜.** `device/protocol.ts`는 최소 Sayo API v2 클라이언트: 연결 시 `0x02 ScreenInfo/SystemInfo`로 240×135와 활성 프로필을 확인한 뒤 ready, 같은 `0x02`의 `cfg_selection`만 바꿔 P1~P5를 RAM에서 선택하고 readback 검증한다. `0x25 Display`는 RGB565 청크 스트리밍에 사용한다 — 직전 프레임과 diff해 변경된 청크만 보내고, 300프레임마다 전체 프레임 강제, 250ms 이상 무전송이면 keep-alive 청크 전송. `0x10 KeyInfo`는 Profile 1 노브 좌/우 엔트리(15/14)를 F20/F19로 임시 변경하는 데만 사용하며, 원본 56바이트 백업·readback 검증·비활성화/종료 복원을 거친다. 패킷은 1024바이트 + 16비트 체크섬. Save/flash/LED/부트로더 명령은 의도적으로 구현되어 있지 않다.
@@ -74,3 +77,21 @@ TypeScript는 2칸 들여쓰기, 작은따옴표, 세미콜론을 사용하며 �
 - 앱에 번들되는 에셋은 `assets/tray`뿐이다(extraResources). `assets/clawd`는 이전 세대 잔재. `tools/import-clawd-gifs.js`가 받는 `assets/clawd-external/` 아트웍은 All-Rights-Reserved 팬아트라 gitignore 대상 — 절대 커밋·재배포 금지.
 - `re/`(gitignored)는 Pulsar Bibimbap Web DRV 역공학 산출물이고, `Manual_XPad_mini.pdf`도 재배포 금지 대상이다.
 - `docs/DEVELOPMENT_REPORT.md`가 현재 구현·검증 결과와 빌드/디버깅/배포 절차의 종합 보고서다(한국어).
+
+<!-- MANUAL:END -->
+
+## Hierarchical Directory Map
+
+이 표는 deepinit이 생성한 하위 `AGENTS.md` 색인이다. 안전 경계·빌드 명령·코딩 규칙은 위 MANUAL 구간이 우선한다.
+
+| Directory | Purpose |
+|-----------|---------|
+| `src/` | electron-vite 소스 (main / preload / renderer / shared). 자세한 내용은 `src/AGENTS.md` |
+| `docs/` | 프로토콜 권위 문서와 개발 보고서. 자세한 내용은 `docs/AGENTS.md` |
+| `tools/` | 빌드 없이 도는 HID 조사·에셋 생성 스크립트. 자세한 내용은 `tools/AGENTS.md` |
+| `assets/` | 트레이 아이콘과 이전 세대 Clawd 잔재. 자세한 내용은 `assets/AGENTS.md` |
+| `share/` | 외부 공유용 제품 README. 자세한 내용은 `share/AGENTS.md` |
+| `build/` | electron-builder 아이콘 원본. 자세한 내용은 `build/AGENTS.md` |
+| `.github/` | CI 워크플로. 자세한 내용은 `.github/AGENTS.md` |
+
+생성하지 않은 디렉터리: `src/main/claude/`(빈 잔재), `assets/clawd/*/`(프레임 PNG만), `node_modules/`·`out/`·`dist/`·`.git/`·`.omc/`·`.omx/`(생성물·런타임 상태).

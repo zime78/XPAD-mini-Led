@@ -1,0 +1,95 @@
+{
+  "type": "process",
+  "title": "YouTube LCD 처리 워크플로",
+  "source": "src/main/display/youtube-lcd.ts, src/main/index.ts, src/main/device/device-worker.ts, src/main/device/protocol.ts",
+  "lanes": [
+    { "name": ["YOUTUBE", "CDN"], "key": "CDN" },
+    { "name": ["CHROMIUM", "RENDERER"], "key": "CHR" },
+    { "name": ["ELECTRON", "MAIN"], "key": "APP" },
+    { "name": ["DEVICE", "WORKER"], "key": "HID" }
+  ],
+  "steps": [
+    { "number": "1", "label": "LOAD" },
+    { "number": "2", "label": "DECODE", "focal": true },
+    { "number": "3", "label": "PLAY" },
+    { "number": "4", "label": "TAP" },
+    { "number": "5", "label": "ENCODE" },
+    { "number": "6", "label": "SEND" }
+  ],
+  "nodes": [
+    {
+      "lane": "APP",
+      "step": 0,
+      "title": "두 watch 창",
+      "sub": "audio + muted lcd",
+      "tool": "YouTubeLcdPlayer",
+      "chips": { "out": "WB" }
+    },
+    {
+      "lane": "CDN",
+      "step": 0,
+      "title": "스트림 수신",
+      "sub": "watch + googlevideo",
+      "tool": "youtube.com",
+      "chips": { "out": "WB" }
+    },
+    {
+      "lane": "CHR",
+      "step": 1,
+      "title": "디먹스·디코드",
+      "sub": "MSE → V/A 분리",
+      "tool": "VideoToolbox*",
+      "chips": { "in": "WB", "out": "LS" }
+    },
+    {
+      "lane": "CHR",
+      "step": 2,
+      "title": "소리 창",
+      "sub": "픽셀 탭 없음",
+      "tool": "AudioService",
+      "chips": { "in": "LS", "out": "LS" },
+      "color": "#5a7d9a"
+    },
+    {
+      "lane": "CHR",
+      "step": 3,
+      "title": "LCD 창 탭",
+      "sub": "음소거 · 240×135",
+      "tool": "getImageData",
+      "chips": { "in": "LS", "out": "FL" },
+      "focal": true
+    },
+    {
+      "lane": "APP",
+      "step": 4,
+      "title": "RGB565",
+      "sub": "LE · dither 없음",
+      "tool": "encodeRgbaToRgb565",
+      "chips": { "in": "FL", "out": "FL" }
+    },
+    {
+      "lane": "HID",
+      "step": 5,
+      "title": "LCD 전송",
+      "sub": "0x25 diff · 220ms",
+      "tool": "drawLcdFrame",
+      "chips": { "in": "FL" }
+    }
+  ],
+  "arrows": [
+    { "from": { "lane": "APP", "step": 0 }, "to": { "lane": "CDN", "step": 0 }, "style": "trigger" },
+    { "from": { "lane": "CDN", "step": 0 }, "to": { "lane": "CHR", "step": 1 }, "style": "normal" },
+    { "from": { "lane": "CHR", "step": 1 }, "to": { "lane": "CHR", "step": 2 }, "style": "normal" },
+    { "from": { "lane": "APP", "step": 0 }, "to": { "lane": "CHR", "step": 2 }, "style": "trigger" },
+    { "from": { "lane": "CHR", "step": 2 }, "to": { "lane": "CHR", "step": 3 }, "style": "focal-in" },
+    { "from": { "lane": "APP", "step": 0 }, "to": { "lane": "CHR", "step": 3 }, "style": "trigger" },
+    { "from": { "lane": "CHR", "step": 3 }, "to": { "lane": "APP", "step": 4 }, "style": "focal-out" },
+    { "from": { "lane": "APP", "step": 4 }, "to": { "lane": "HID", "step": 5 }, "style": "normal" }
+  ],
+  "notes": [
+    "같은 persist:youtube-lcd 세션으로 소리 창과 음소거 LCD 창을 나눈다.",
+    "getImageData 와 setPlaybackQuality 는 LCD 창만. 소리 창은 재생만 한다.",
+    "미리보기는 기기로 보낸 RGB565 를 PNG 로 복원해 같은 200ms 주기로 보여 준다.",
+    "hwdecode=on 은 로그 라벨이다. 앱이 VideoToolbox 를 직접 호출하지 않는다."
+  ]
+}

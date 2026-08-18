@@ -37,6 +37,7 @@ macOS에서 실행되는 데스크톱 앱이 Spotify 또는 Apple Music의 현�
 | 미세 볼륨 | XPAD 노브 한 칸을 실제 출력 단계 한 칸과 매칭, 클릭 Mute 유지 | 완료 |
 | 볼륨 피드백 | 조절 후 실제 출력값을 LCD·앱 미리보기에 표시하고 1.6초 뒤 곡 화면 복원 | 완료 |
 | 빠른 프로필 전환 | 재생 화면 P1~P5 버튼, 실제 RAM 프로필 선택·readback, 하단 3키 요약·로컬 라우터 동기화 | 완료 |
+| YouTube P5 | 로그인된 공식 watch. 소리 창과 음소거 LCD 창을 같은 세션으로 분리. 기기·미리보기는 같은 RGB565 | 완료 |
 | 자동 복구 | 장치 분리 후 3초 간격 재연결 | 완료 |
 | 설정 화면 | 음악 표시 설정, 노브 미세 볼륨 활성화·단위, 로그인 실행 | 완료 |
 | 키보드 설정 | 독립 창, Profile 1 고정 음악 제어, Profile 2~5 하단 3버튼 실기기 조회·로컬 편집, 앱 실행, 사용자 백업 최대 10개 | 완료 |
@@ -189,7 +190,22 @@ readback으로 확인한다. 설정 비활성화와 정상 종료 때 출고 Vol
 기존 F20/F19 등록, 볼륨 단계 탐색, KeyInfo RAM 매핑과 장치 프로토콜을 변경하지 않는다.
 
 곡명·아티스트·앨범아트, HID 경로·시리얼, 사용자 홈 경로는 기록하지 않는다. 로그는
-1MiB에서 회전하며 현재 파일과 직전 파일 하나만 유지한다.
+1MiB에서 회전하며 현재 파일과 직전 파일 하나만 유지한다. YouTube 화질·볼륨·광고 전환은
+같은 파일에 `youtube-audio`로만 남긴다.
+
+### 4.45 YouTube P5
+
+구현 파일: [`src/main/display/youtube-lcd.ts`](../src/main/display/youtube-lcd.ts),
+[`src/main/display/youtube-library.ts`](../src/main/display/youtube-library.ts).
+구조 정본: [`docs/plan/youtube-p5/STRUCTURE_REVIEW.md`](./plan/youtube-p5/STRUCTURE_REVIEW.md).
+
+인증이 필수이므로 스트림을 앱이 직접 받아 재인코딩하지 않는다. Profile 5는 공식
+`youtube.com/watch`를 같은 파티션 `persist:youtube-lcd`로 연다. 숨은 창을 둘로 나눈다.
+
+- 소리 창: 재생만 한다. `getImageData`와 `setPlaybackQuality`를 쓰지 않는다.
+- LCD 창: 음소거, `tiny`(144p) 고정, 200ms마다 240×135 RGB565를 뽑아 `0x25`로 보낸다.
+- 앱 미리보기: 기기로 보낸 그 RGB565를 PNG로 복원해 같은 주기로 표시한다.
+- 위치가 1.5초 이상 벌어지면 LCD 창만 소리 창에 맞춘다. 광고 타이밍 차이는 허용한다.
 
 ### 4.5 설정 화면과 트레이
 

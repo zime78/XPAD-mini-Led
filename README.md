@@ -79,7 +79,7 @@ macOS의 Spotify와 Apple Music 재생 정보를 읽어 Pulsar Lab XPAD Mini의 
 
 1. `NowPlayingMonitor`가 실행 중인 Spotify와 Music을 확인하고 AppleScript로 재생 정보를 읽습니다. 기본 확인 주기는 1.5초입니다.
 2. Electron main 프로세스가 최신 `TrackInfo`만 렌더 큐에 남기고 설정 UI·미리보기·장치 워커에 같은 상태를 전달합니다.
-3. 숨김 offscreen 창이 240×135 Canvas에 직접 그린 뒤 LCD용 RGB565 little-endian 64,800바이트 프레임으로 변환합니다. 앱 미리보기는 이 RGB565 프레임을 다시 PNG로 복원해 실기기 색상과 일치시킵니다.
+3. 음악 모드에서는 숨김 offscreen 창이 240×135 Canvas에 직접 그린 뒤 LCD용 RGB565 little-endian 64,800바이트 프레임으로 변환합니다. YouTube(P5)는 같은 로그인 세션의 소리 창에서 재생하고, 음소거 LCD 창에서만 200ms마다 픽셀을 뽑아 RGB565로 바꿉니다. 앱 미리보기는 기기로 보낸 그 RGB565를 PNG로 복원해 같은 주기로 보여 줍니다.
 4. device worker가 직전 프레임과 다른 청크만 Vendor HID로 전송하고, 220ms 재전송과 keep-alive로 펌웨어 기본 화면이 다시 나타나지 않게 합니다.
 5. XPAD Mini가 분리되면 HID 계층이 3초 간격으로 재연결을 시도하고, 준비가 끝나면 최신 프레임과 설정을 다시 적용합니다.
 
@@ -222,7 +222,9 @@ git에 커밋되는 핵심 파일 기준입니다. 생성물 `out/`, `dist/`, `n
 │  │  │  ├─ frame-renderer.ts       # 240×135 Canvas 레이아웃·LCD 볼륨 OSD
 │  │  │  ├─ frame-pipeline.ts       # RGB565 디더링·인코딩·프리뷰 복원
 │  │  │  ├─ text-layout.ts          # 실제 픽셀 폭 기반 줄바꿈·말줄임
-│  │  │  └─ volume-overlay.ts       # 볼륨 값 정규화
+│  │  │  ├─ volume-overlay.ts       # 볼륨 값 정규화
+│  │  │  ├─ youtube-lcd.ts          # 소리 창 + 음소거 LCD 창, RGB565 탭
+│  │  │  └─ youtube-library.ts      # 로컬 YouTube 목록
 │  │  ├─ input/
 │  │  │  ├─ fine-volume.ts          # F20/F19 노브 미세 볼륨
 │  │  │  └─ key-action-router.ts    # F16~F18 → 활성 프로필 앱 실행

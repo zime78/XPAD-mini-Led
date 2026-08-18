@@ -36,11 +36,89 @@ const VIEW_WIDTH = LCD_WIDTH;
 const VIEW_HEIGHT = LCD_HEIGHT;
 /** YouTube가 제공하는 최저 화질부터 고른다. tiny=144p, 없으면 small=240p. */
 export const YOUTUBE_QUALITY_PREF = ['tiny', 'small', 'medium'] as const;
-/** HID 천장(~5fps)에 맞춰 뽑는다. 더 빨리 뽑으면 오디오만 끊긴다. */
+/** LCD 창만 탭한다. 소리 창에서는 뽑지 않는다. HID ~5fps. */
 const CAPTURE_INTERVAL_MS = 200;
+const LCD_SYNC_DRIFT_SEC = 1.5;
 const FPS_LOG_INTERVAL_MS = 2000;
 /** 제목·상태는 캡처보다 드물게 읽는다. 음성 스레드를 건드리지 않게 1초. */
 const INFO_INTERVAL_MS = 1000;
+/** 허용 화질이거나 이미 고정한 unknown이면 다시 setPlaybackQuality 하지 않는다. */
+export function shouldApplyYoutubeQuality(input: {
+  current: string | null | undefined;
+  chosen: string | null | undefined;
+  pref: readonly string[];
+  alreadyPinned: boolean;
+}): boolean {
+  const current = input.current ?? '';
+  const chosen = input.chosen ?? '';
+  const { pref, alreadyPinned } = input;
+  if (!chosen) return false;
+  if (current && (pref.includes(current) || current === chosen)) return false;
+  if ((current === 'unknown' || current === 'auto') && alreadyPinned) return false;
+  if (!alreadyPinned) return true;
+  return Boolean(current && current !== 'unknown' && current !== 'auto' && !pref.includes(current));
+}
+
+/** mute이거나 체감될 만큼 작을 때만 HTML 볼륨을 되돌린다. 1과의 미세 오차는 무시한다. */
+export function shouldResetYoutubeVolume(muted: boolean, volume: number): boolean {
+  return muted || !Number.isFinite(volume) || volume < 0.99;
+}
+
+/** 재생 중에는 캡처 주기마다 뽑는다. 숨은 창의 rVFC는 거의 안 불린다. 일시정지일 때만 dirty로 생략한다. */
+export function shouldPullYoutubeLcdFrame(
+  dirty: boolean,
+  hasRvfc: boolean,
+  playing: boolean
+): boolean {
+  if (playing) return true;
+  return hasRvfc ? dirty : true;
+}
+
+export interface YoutubeAudioSnapshot {
+  volume: number | null;
+  muted: boolean | null;
+  quality: string | null;
+  adPlaying: boolean;
+  qualityApplied: boolean;
+  volumeReset: boolean;
+}
+
+/** executeJavaScript가 준 오디오/화질 원시값을 진단 스냅샷으로 맞춘다. */
+export function mapYoutubeAudioSnapshot(raw: unknown): YoutubeAudioSnapshot | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const source = raw as {
+    volume?: unknown;
+    muted?: unknown;
+    quality?: unknown;
+    adPlaying?: unknown;
+    qualityApplied?: unknown;
+    volumeReset?: unknown;
+  };
+  const volume = source.volume == null ? null : Number(source.volume);
+  return {
+    volume: volume != null && Number.isFinite(volume) ? volume : null,
+    muted: typeof source.muted === 'boolean' ? source.muted : null,
+    quality: typeof source.quality === 'string' && source.quality ? source.quality : null,
+    adPlaying: Boolean(source.adPlaying),
+    qualityApplied: Boolean(source.qualityApplied),
+    volumeReset: Boolean(source.volumeReset),
+  };
+}
+
+/** 전환 로그용. qualityApplied/volumeReset 일회 플래그는 비교하지 않는다. */
+export function sameYoutubeAudioSnapshot(
+  left: YoutubeAudioSnapshot | null,
+  right: YoutubeAudioSnapshot | null
+): boolean {
+  if (left === right) return true;
+  if (!left || !right) return false;
+  return (
+    left.volume === right.volume &&
+    left.muted === right.muted &&
+    left.quality === right.quality &&
+    left.adPlaying === right.adPlaying
+  );
+}
 
 /** 2초 구간의 횟수·합계를 한 줄 로그로 만든다. */
 export function formatFpsLine(
@@ -121,12 +199,35 @@ export interface YouTubeLcdStartOptions {
   onStopped?: () => void;
   onInfo?: (info: YoutubePlayerSnapshot) => void;
   onEnded?: () => void;
+  onAudioChange?: (snapshot: YoutubeAudioSnapshot) => void;
 }
 
 /** RGBA를 LCD 미리보기 PNG data URL로 만든다. */
 export function rgbaToPngDataUrl(rgba: Buffer, width: number, height: number): string {
   const png = new PNG({ width, height });
   rgba.copy(png.data, 0, 0, Math.min(png.data.length, rgba.length));
+  return `data:image/png;base64,${PNG.sync.write(png).toString('base64')}`;
+}
+
+/** 기기로 보낸 RGB565와 같은 픽셀로 미리보기 PNG를 만든다. */
+export function rgb565ToPngDataUrl(
+  rgb565: Buffer,
+  width = LCD_WIDTH,
+  height = LCD_HEIGHT
+): string {
+  const png = new PNG({ width, height });
+  const pixels = width * height;
+  for (let index = 0; index < pixels; index++) {
+    const value = rgb565.readUInt16LE(index * 2);
+    const red = (value >> 11) & 31;
+    const green = (value >> 5) & 63;
+    const blue = value & 31;
+    const pixel = index * 4;
+    png.data[pixel] = (red << 3) | (red >> 2);
+    png.data[pixel + 1] = (green << 2) | (green >> 4);
+    png.data[pixel + 2] = (blue << 3) | (blue >> 2);
+    png.data[pixel + 3] = 255;
+  }
   return `data:image/png;base64,${PNG.sync.write(png).toString('base64')}`;
 }
 
@@ -442,11 +543,16 @@ const VIDEO_TAP_SCRIPT = `
     document.documentElement.appendChild(canvas);
     const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true, willReadFrequently: true });
     window.__xpadLcdTap = { canvas, ctx, frames: 0 };
+    window.__xpadLcdDirty = true;
     window.__xpadTakeLcdFrame = () => {
       const tap = window.__xpadLcdTap;
       const video = pickVideo();
       if (!tap.ctx || !video) return null;
+      const hasRvfc = typeof video.requestVideoFrameCallback === 'function';
+      const playing = !video.paused && !video.ended;
+      if (!playing && hasRvfc && !window.__xpadLcdDirty) return { skipped: true };
       if (!coverDraw(tap.ctx, video)) return null;
+      window.__xpadLcdDirty = false;
       const image = tap.ctx.getImageData(0, 0, W, H);
       tap.frames += 1;
       return {
@@ -459,8 +565,20 @@ const VIDEO_TAP_SCRIPT = `
     };
   }
 
+  const bindRvfc = (video) => {
+    if (!video || video.__xpadRvfc) return;
+    if (typeof video.requestVideoFrameCallback !== 'function') return;
+    video.__xpadRvfc = true;
+    const tick = () => {
+      window.__xpadLcdDirty = true;
+      try { video.requestVideoFrameCallback(tick); } catch (error) {}
+    };
+    video.requestVideoFrameCallback(tick);
+  };
+
   const tap = window.__xpadLcdTap;
   const video = pickVideo();
+  bindRvfc(video);
   if (!tap.ctx) return { status: 'no-context' };
   if (!video) return { status: 'waiting', isolated: false, encode: 'main-rgb565' };
   return {
@@ -471,6 +589,7 @@ const VIDEO_TAP_SCRIPT = `
     encode: 'main-rgb565',
     pullOnly: true,
     frames: tap.frames,
+    rvfc: typeof video.requestVideoFrameCallback === 'function',
   };
 })();
 `;
@@ -512,16 +631,23 @@ export function watchUrl(videoId: string): string {
   return `https://www.youtube.com/watch?${params.toString()}`;
 }
 
-export function preparePlayerScript(wantPlay: boolean): string {
+export type YoutubePrepareRole = 'audio' | 'lcd';
+
+/** 소리 창은 재생만, LCD 창은 음소거 후 화질만 맞춘다. */
+export function preparePlayerScript(
+  wantPlay: boolean,
+  role: YoutubePrepareRole = 'audio'
+): string {
   return `
 (() => {
   const wantPlay = ${wantPlay ? 'true' : 'false'};
+  const lcd = ${role === 'lcd' ? 'true' : 'false'};
   const videos = Array.from(document.querySelectorAll('video'));
   const video = videos
     .filter((item) => item.videoWidth > 0)
     .sort((a, b) => b.clientWidth * b.clientHeight - a.clientWidth * a.clientHeight)[0]
     ?? videos[0];
-  if (video) {
+  if (video && lcd) {
     if (!document.getElementById('xpad-video-only')) {
       const style = document.createElement('style');
       style.id = 'xpad-video-only';
@@ -546,44 +672,111 @@ export function preparePlayerScript(wantPlay: boolean): string {
   }
   const player = document.getElementById('movie_player');
   const pref = ${JSON.stringify(YOUTUBE_QUALITY_PREF)};
+  const adPlaying = Boolean(
+    player && (player.classList.contains('ad-showing') || player.classList.contains('ad-interrupting'))
+  );
   let quality = null;
-  if (player) {
+  let qualityApplied = false;
+  if (player && lcd) {
+    const data = typeof player.getVideoData === 'function' ? player.getVideoData() : {};
+    const videoId = data && data.video_id ? String(data.video_id) : '';
+    if (window.__xpadPinnedVideoId !== videoId) {
+      window.__xpadQualityPinned = false;
+      window.__xpadPinnedVideoId = videoId;
+    }
     const levels = typeof player.getAvailableQualityLevels === 'function'
       ? player.getAvailableQualityLevels()
       : [];
     const chosen = pref.find((item) => levels.includes(item))
       ?? (levels.length ? levels[levels.length - 1] : pref[0]);
-    try {
-      if (typeof player.setPlaybackQualityRange === 'function') {
-        player.setPlaybackQualityRange(chosen, chosen);
+    const current = typeof player.getPlaybackQuality === 'function'
+      ? player.getPlaybackQuality()
+      : null;
+    quality = current || chosen;
+    const pinned = Boolean(window.__xpadQualityPinned);
+    const allowed = current && (pref.includes(current) || current === chosen);
+    const unknownHold = pinned && (current === 'unknown' || current === 'auto');
+    const tooHigh = current && current !== 'unknown' && current !== 'auto' && !pref.includes(current);
+    const apply = Boolean(chosen) && !allowed && !unknownHold && (!pinned || tooHigh);
+    if (allowed) window.__xpadQualityPinned = true;
+    if (apply) {
+      try {
+        if (typeof player.setPlaybackQualityRange === 'function') {
+          player.setPlaybackQualityRange(chosen, chosen);
+        }
+        if (typeof player.setPlaybackQuality === 'function') {
+          player.setPlaybackQuality(chosen);
+        }
+        qualityApplied = true;
+        window.__xpadQualityPinned = true;
+        quality = typeof player.getPlaybackQuality === 'function'
+          ? player.getPlaybackQuality()
+          : chosen;
+      } catch (error) {
+        quality = 'error';
       }
-      if (typeof player.setPlaybackQuality === 'function') {
-        player.setPlaybackQuality(chosen);
-      }
-      quality = typeof player.getPlaybackQuality === 'function'
-        ? player.getPlaybackQuality()
-        : chosen;
-    } catch (error) {
-      quality = 'error';
     }
   }
+  let volumeReset = false;
   if (video) {
-    video.muted = false;
-    video.volume = 1;
+    if (lcd) {
+      if (!video.muted || video.volume !== 0) {
+        video.muted = true;
+        video.volume = 0;
+        volumeReset = true;
+      }
+    } else if (video.muted || !(video.volume >= 0.99)) {
+      video.muted = false;
+      video.volume = 1;
+      volumeReset = true;
+    }
     if (wantPlay && video.paused && !video.ended) {
       video.play?.().catch(() => {});
     }
     return {
       status: video.paused ? 'paused' : 'playing',
       quality,
-      isolated: true,
+      isolated: lcd,
+      volume: video.volume,
+      muted: video.muted,
+      qualityApplied,
+      volumeReset,
+      adPlaying,
     };
   }
   if (wantPlay) {
     const play = document.querySelector('button.ytp-large-play-button, button[aria-label*="재생"], button[aria-label*="Play"]');
     if (play instanceof HTMLElement) play.click();
   }
-  return { status: 'waiting', quality, isolated: false };
+  return {
+    status: 'waiting',
+    quality,
+    isolated: false,
+    volume: null,
+    muted: null,
+    qualityApplied,
+    volumeReset: false,
+    adPlaying,
+  };
+})();
+`;
+}
+
+/** LCD 창 재생 위치를 소리 창에 맞출 때 쓴다. */
+export function seekPlayerScript(seconds: number): string {
+  const time = Number.isFinite(seconds) ? Math.max(0, seconds) : 0;
+  return `
+(() => {
+  const seconds = ${time};
+  const player = document.getElementById('movie_player');
+  if (player && typeof player.seekTo === 'function') {
+    player.seekTo(seconds, true);
+    return { status: 'seeked' };
+  }
+  const video = document.querySelector('video');
+  if (!video) return { status: 'missing' };
+  video.currentTime = seconds;
+  return { status: 'seeked' };
 })();
 `;
 }
@@ -608,6 +801,9 @@ const READ_PLAYER_INFO_SCRIPT = `
     player && (player.classList.contains('ad-showing') || player.classList.contains('ad-interrupting'))
   );
   const signedIn = /(?:^|;\\s*)(?:__Secure-)?(?:SAPISID|SID|LOGIN_INFO)=/.test(document.cookie);
+  const quality = player && typeof player.getPlaybackQuality === 'function'
+    ? player.getPlaybackQuality()
+    : null;
   return {
     videoId: data && data.video_id ? String(data.video_id) : '',
     title: data && data.title ? String(data.title) : (document.title || ''),
@@ -617,6 +813,9 @@ const READ_PLAYER_INFO_SCRIPT = `
     position,
     signedIn,
     adPlaying,
+    volume: video ? video.volume : null,
+    muted: video ? video.muted : null,
+    quality,
   };
 })();
 `;
@@ -741,12 +940,51 @@ export async function clearYoutubeSession(): Promise<void> {
   await session.fromPartition(YOUTUBE_SESSION_PARTITION).clearStorageData();
 }
 
+function createHiddenWatchWindow(title: string): BrowserWindow {
+  const window = new BrowserWindow({
+    title,
+    width: VIEW_WIDTH,
+    height: VIEW_HEIGHT,
+    useContentSize: true,
+    show: false,
+    skipTaskbar: true,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    backgroundColor: '#000000',
+    autoHideMenuBar: true,
+    webPreferences: {
+      backgroundThrottling: false,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+      webSecurity: true,
+      autoplayPolicy: 'no-user-gesture-required',
+      partition: YOUTUBE_SESSION_PARTITION,
+    },
+  });
+  window.setMenuBarVisibility(false);
+  window.webContents.setUserAgent(applyYoutubeSessionUserAgent());
+  window.webContents.setBackgroundThrottling(false);
+  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  return window;
+}
+
+function loadWatchPage(window: BrowserWindow, videoId: string): Promise<void> {
+  return window.loadURL(watchUrl(videoId), {
+    extraHeaders: 'Referer: https://www.youtube.com/\r\n',
+    httpReferrer: 'https://www.youtube.com/',
+  });
+}
+
 /**
- * 공식 YouTube watch 페이지를 띄운다. 음성은 이 창에서 끊기지 않게 재생하고,
- * 영상만 240×135 RGB565로 맞춰 HID로 보낸다. 창 전체 캡처는 쓰지 않는다.
+ * 같은 로그인 세션으로 창을 둘로 나눈다.
+ * 소리 창은 픽셀을 안 뜯고, LCD 창은 음소거 후 장만 뽑는다.
  */
 export class YouTubeLcdPlayer {
-  private window: BrowserWindow | null = null;
+  private audioWindow: BrowserWindow | null = null;
+  private lcdWindow: BrowserWindow | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
   private playTimer: ReturnType<typeof setInterval> | null = null;
   private infoTimer: ReturnType<typeof setInterval> | null = null;
@@ -759,119 +997,134 @@ export class YouTubeLcdPlayer {
   private capturing = false;
   private lastLoggedQuality: string | null = null;
   private lastLoggedTap: string | null = null;
+  private lastAudio: YoutubeAudioSnapshot | null = null;
+  private onAudioChange: ((snapshot: YoutubeAudioSnapshot) => void) | null = null;
   private readonly meter = new IntervalMeter();
 
   get active(): boolean {
-    return this.window !== null && !this.window.isDestroyed();
+    return this.audioWindow !== null && !this.audioWindow.isDestroyed();
   }
 
   start(options: YouTubeLcdStartOptions): void {
     this.stop({ silent: true });
     this.onStopped = options.onStopped ?? null;
     this.onEnded = options.onEnded ?? null;
+    this.onAudioChange = options.onAudioChange ?? null;
     this.currentVideoId = options.videoId;
+    this.lastAudio = null;
     this.lastEndedVideoId = null;
     this.userPaused = false;
 
-    const window = new BrowserWindow({
-      title: 'XPAD YouTube LCD',
-      width: VIEW_WIDTH,
-      height: VIEW_HEIGHT,
-      useContentSize: true,
-      show: false,
-      skipTaskbar: true,
-      resizable: false,
-      minimizable: false,
-      maximizable: false,
-      fullscreenable: false,
-      backgroundColor: '#000000',
-      autoHideMenuBar: true,
-      webPreferences: {
-        backgroundThrottling: false,
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: false,
-        webSecurity: true,
-        autoplayPolicy: 'no-user-gesture-required',
-        partition: YOUTUBE_SESSION_PARTITION,
-      },
-    });
-    this.window = window;
     hardenYoutubeSession();
-    window.webContents.setUserAgent(applyYoutubeSessionUserAgent());
-    window.webContents.setBackgroundThrottling(false);
+    const audio = createHiddenWatchWindow('XPAD YouTube Audio');
+    const lcd = createHiddenWatchWindow('XPAD YouTube LCD');
+    this.audioWindow = audio;
+    this.lcdWindow = lcd;
     console.log(
-      `[youtube-lcd] start video=${options.videoId} url=${watchUrl(options.videoId)} source=video-element encode=main-rgb565 hwdecode=on pace=device captureIntervalMs=${CAPTURE_INTERVAL_MS} lcd=${LCD_WIDTH}x${LCD_HEIGHT}`
+      `[youtube-lcd] start video=${options.videoId} url=${watchUrl(options.videoId)} source=split-audio-lcd encode=main-rgb565 captureIntervalMs=${CAPTURE_INTERVAL_MS} lcd=${LCD_WIDTH}x${LCD_HEIGHT}`
     );
-    window.setMenuBarVisibility(false);
-    window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
 
-    window.on('closed', () => {
+    const handleClosed = () => {
+      if (this.audioWindow !== audio && this.lcdWindow !== lcd) return;
       this.clearTimer();
-      this.window = null;
+      this.destroyWatchWindows();
       const stopped = this.onStopped;
       this.onStopped = null;
       stopped?.();
-    });
+    };
+    audio.on('closed', handleClosed);
+    lcd.on('closed', handleClosed);
 
-    void window.loadURL(watchUrl(options.videoId), {
-      extraHeaders: 'Referer: https://www.youtube.com/\r\n',
-      httpReferrer: 'https://www.youtube.com/',
-    });
-
-    const prepare = () => {
-      if (this.window !== window || window.isDestroyed()) return;
-      void window.webContents
-        .executeJavaScript(preparePlayerScript(!this.userPaused))
+    const prepareAudio = () => {
+      if (this.audioWindow !== audio || audio.isDestroyed()) return;
+      void audio.webContents
+        .executeJavaScript(preparePlayerScript(!this.userPaused, 'audio'))
+        .then((result) => {
+          this.noteAudio(result);
+        })
+        .catch(() => undefined);
+    };
+    const prepareLcd = () => {
+      if (this.lcdWindow !== lcd || lcd.isDestroyed()) return;
+      void lcd.webContents
+        .executeJavaScript(preparePlayerScript(!this.userPaused, 'lcd'))
         .then((result) => {
           const info = result as { status?: string; quality?: string | null } | null;
           if (info?.status === 'playing' || info?.status === 'paused') {
             const quality = info.quality ?? 'unknown';
             if (quality !== this.lastLoggedQuality) {
               this.lastLoggedQuality = quality;
-              console.log(`[youtube-lcd] playback quality=${quality}`);
+              console.log(`[youtube-lcd] lcd quality=${quality}`);
             }
-            void this.installVideoTap(window);
+            void this.installVideoTap(lcd);
           }
         })
         .catch(() => undefined);
     };
 
-    window.webContents.on('did-finish-load', () => {
-      if (this.window !== window || window.isDestroyed()) return;
-      prepare();
-      if (!this.timer) {
-        this.timer = setInterval(() => {
-          void this.capture(window, options.onFrame, options.onPreview);
-        }, CAPTURE_INTERVAL_MS);
-      }
+    audio.webContents.on('did-finish-load', () => {
+      if (this.audioWindow !== audio || audio.isDestroyed()) return;
+      prepareAudio();
       if (!this.infoTimer && options.onInfo) {
         const emitInfo = () => {
-          void this.readInfo(window, options.onInfo);
+          void this.readInfo(audio, options.onInfo);
         };
         emitInfo();
         this.infoTimer = setInterval(emitInfo, INFO_INTERVAL_MS);
       }
     });
-    this.playTimer = setInterval(prepare, 2000);
+    lcd.webContents.on('did-finish-load', () => {
+      if (this.lcdWindow !== lcd || lcd.isDestroyed()) return;
+      prepareLcd();
+      if (!this.timer) {
+        this.timer = setInterval(() => {
+          void this.capture(lcd, options.onFrame, options.onPreview);
+        }, CAPTURE_INTERVAL_MS);
+      }
+    });
+    this.playTimer = setInterval(() => {
+      prepareAudio();
+      prepareLcd();
+    }, 2000);
+
+    void loadWatchPage(audio, options.videoId);
+    void loadWatchPage(lcd, options.videoId);
   }
 
   async controlPlayPause(): Promise<void> {
-    const window = this.requireWindow();
-    const result = (await window.webContents.executeJavaScript(CONTROL_PLAY_PAUSE_SCRIPT)) as {
+    const audio = this.requireAudioWindow();
+    const result = (await audio.webContents.executeJavaScript(CONTROL_PLAY_PAUSE_SCRIPT)) as {
       status?: string;
     } | null;
     if (result?.status === 'missing') {
       throw new Error('YouTube 재생기를 찾지 못했습니다.');
     }
     this.userPaused = result?.status === 'paused';
+    const lcd = this.lcdWindow;
+    if (lcd && !lcd.isDestroyed()) {
+      try {
+        await lcd.webContents.executeJavaScript(CONTROL_PLAY_PAUSE_SCRIPT);
+      } catch {
+        // 소리 창 상태가 우선이다.
+      }
+    }
   }
 
   async load(videoId: string): Promise<void> {
-    const window = this.requireWindow();
+    const audio = this.requireAudioWindow();
     this.currentVideoId = videoId;
     this.lastEndedVideoId = null;
     this.userPaused = false;
+    this.lastAudio = null;
+    await Promise.all([
+      this.loadOnWindow(audio, videoId),
+      this.lcdWindow && !this.lcdWindow.isDestroyed()
+        ? this.loadOnWindow(this.lcdWindow, videoId)
+        : Promise.resolve(),
+    ]);
+  }
+
+  private async loadOnWindow(window: BrowserWindow, videoId: string): Promise<void> {
     try {
       const result = (await window.webContents.executeJavaScript(loadVideoScript(videoId))) as {
         status?: string;
@@ -880,10 +1133,7 @@ export class YouTubeLcdPlayer {
     } catch {
       // watch 페이지 재로드로 폴백한다.
     }
-    await window.loadURL(watchUrl(videoId), {
-      extraHeaders: 'Referer: https://www.youtube.com/\r\n',
-      httpReferrer: 'https://www.youtube.com/',
-    });
+    await loadWatchPage(window, videoId);
   }
 
   async openSignInWindow(): Promise<YoutubeAccountState> {
@@ -893,7 +1143,7 @@ export class YouTubeLcdPlayer {
       return readYoutubeAccountState();
     }
     try {
-      await this.window?.webContents.executeJavaScript(CONTROL_PLAY_PAUSE_SCRIPT);
+      await this.audioWindow?.webContents.executeJavaScript(CONTROL_PLAY_PAUSE_SCRIPT);
     } catch {
       // 로그인 창을 여는 것이 우선이다.
     }
@@ -961,16 +1211,24 @@ export class YouTubeLcdPlayer {
       this.signInWindow.destroy();
     }
     this.signInWindow = null;
-    const window = this.window;
-    this.window = null;
     if (options.silent) this.onStopped = null;
     const stopped = this.onStopped;
     this.onStopped = null;
-    if (window && !window.isDestroyed()) {
-      window.removeAllListeners('closed');
-      window.destroy();
-    }
+    this.destroyWatchWindows();
     if (!options.silent) stopped?.();
+  }
+
+  private destroyWatchWindows(): void {
+    const audio = this.audioWindow;
+    const lcd = this.lcdWindow;
+    this.audioWindow = null;
+    this.lcdWindow = null;
+    for (const window of [audio, lcd]) {
+      if (window && !window.isDestroyed()) {
+        window.removeAllListeners('closed');
+        window.destroy();
+      }
+    }
   }
 
   private clearTimer(): void {
@@ -983,6 +1241,8 @@ export class YouTubeLcdPlayer {
     this.capturing = false;
     this.lastLoggedQuality = null;
     this.lastLoggedTap = null;
+    this.lastAudio = null;
+    this.onAudioChange = null;
     this.meter.reset();
   }
 
@@ -1021,10 +1281,14 @@ export class YouTubeLcdPlayer {
         this.meter.emptyFrame();
         return;
       }
+      if ('skipped' in pulled) {
+        return;
+      }
       const pullMs = Date.now() - started;
       const encodeStarted = Date.now();
-      onFrame(encodeRgbaToRgb565(pulled.rgba, pulled.width, pulled.height));
-      onPreview?.(rgbaToPngDataUrl(pulled.rgba, pulled.width, pulled.height));
+      const rgb565 = encodeRgbaToRgb565(pulled.rgba, pulled.width, pulled.height);
+      onFrame(rgb565);
+      onPreview?.(rgb565ToPngDataUrl(rgb565));
       this.meter.ok('video', pullMs, Date.now() - encodeStarted);
     } catch (error) {
       console.error('[youtube-lcd] capture failed', error);
@@ -1034,8 +1298,8 @@ export class YouTubeLcdPlayer {
     }
   }
 
-  private requireWindow(): BrowserWindow {
-    const window = this.window;
+  private requireAudioWindow(): BrowserWindow {
+    const window = this.audioWindow;
     if (!window || window.isDestroyed()) {
       throw new Error('YouTube 재생 창이 없습니다.');
     }
@@ -1051,7 +1315,11 @@ export class YouTubeLcdPlayer {
       await window.webContents.executeJavaScript(SKIP_AD_SCRIPT);
       const raw = await window.webContents.executeJavaScript(READ_PLAYER_INFO_SCRIPT);
       const info = mapYoutubePlayerInfo(raw);
-      if (info) onInfo?.(info);
+      this.noteAudio(raw);
+      if (info) {
+        onInfo?.(info);
+        void this.syncLcdClock(info.position);
+      }
       const playerState = Number((raw as { playerState?: unknown } | null)?.playerState);
       if (
         playerState === 0 &&
@@ -1069,16 +1337,49 @@ export class YouTubeLcdPlayer {
 
   private async pullVideoFrame(
     window: BrowserWindow
-  ): Promise<{ rgba: Buffer; width: number; height: number } | null> {
+  ): Promise<{ rgba: Buffer; width: number; height: number } | { skipped: true } | null> {
     const raw = (await window.webContents.executeJavaScript(TAKE_VIDEO_FRAME_SCRIPT)) as {
       rgba?: unknown;
       width?: number;
       height?: number;
+      skipped?: unknown;
     } | null;
+    if (raw?.skipped) return { skipped: true };
     const rgba = unwrapPixelBytes(raw?.rgba);
     const width = Number(raw?.width ?? 0);
     const height = Number(raw?.height ?? 0);
     if (!rgba || width < 1 || height < 1 || rgba.length < width * height * 4) return null;
     return { rgba, width, height };
+  }
+
+  /** 화질·볼륨·광고가 바뀌었거나 이번에 강제 적용했으면 진단 콜백만 호출한다. */
+  private noteAudio(raw: unknown): void {
+    const snapshot = mapYoutubeAudioSnapshot(raw);
+    if (!snapshot) return;
+    const changed = !sameYoutubeAudioSnapshot(this.lastAudio, snapshot);
+    if (!changed && !snapshot.qualityApplied && !snapshot.volumeReset) return;
+    this.lastAudio = snapshot;
+    if (snapshot.qualityApplied || snapshot.volumeReset) {
+      console.log(
+        `[youtube-lcd] audio quality=${snapshot.quality ?? 'none'} volume=${snapshot.volume ?? -1} muted=${snapshot.muted} ad=${snapshot.adPlaying} qualityApplied=${snapshot.qualityApplied} volumeReset=${snapshot.volumeReset}`
+      );
+    }
+    this.onAudioChange?.(snapshot);
+  }
+
+  /** 소리 창 시각과 LCD 창이 1.5초 이상 벌어지면 LCD만 맞춘다. */
+  private async syncLcdClock(position: number): Promise<void> {
+    const lcd = this.lcdWindow;
+    if (!lcd || lcd.isDestroyed() || !Number.isFinite(position)) return;
+    try {
+      await lcd.webContents.executeJavaScript(SKIP_AD_SCRIPT);
+      const raw = await lcd.webContents.executeJavaScript(READ_PLAYER_INFO_SCRIPT);
+      const lcdInfo = mapYoutubePlayerInfo(raw);
+      if (!lcdInfo) return;
+      if (Math.abs(lcdInfo.position - position) <= LCD_SYNC_DRIFT_SEC) return;
+      await lcd.webContents.executeJavaScript(seekPlayerScript(position));
+    } catch {
+      // 다음 정보 주기에서 다시 맞춘다.
+    }
   }
 }

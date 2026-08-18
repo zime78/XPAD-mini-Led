@@ -500,6 +500,16 @@ function startYoutubeLcdSample(rawId = youtubeVideoIdToPlay()): void {
       youtubePlayback = null;
       refreshDisplay('youtube-stopped');
     },
+    onAudioChange: (snapshot) => {
+      diagnosticLog?.log('youtube-audio', {
+        volume: snapshot.volume,
+        muted: snapshot.muted,
+        quality: snapshot.quality,
+        adPlaying: snapshot.adPlaying,
+        qualityApplied: snapshot.qualityApplied,
+        volumeReset: snapshot.volumeReset,
+      });
+    },
   });
   broadcastStatus();
 }

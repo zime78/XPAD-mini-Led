@@ -74,6 +74,8 @@ macOS의 Spotify와 Apple Music 재생 정보를 Pulsar Lab XPAD Mini의 240×13
 - XPAD 노브 한 칸을 macOS의 실제 다음 출력 단계에 맞추고, 조절 결과를 LCD와
   앱 미리보기에 잠시 표시합니다.
 - USB 분리 후 3초 간격 재연결, 로그인 시 실행, 키 설정 사용자 백업을 지원합니다.
+- Profile 5는 로그인된 YouTube를 재생한다. 소리는 공식 watch 창, LCD·미리보기는
+  같은 세션의 음소거 창에서 뽑은 240×135 RGB565다.
 
 ## 화면
 

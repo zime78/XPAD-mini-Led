@@ -19,12 +19,19 @@ import {
   encodeCapturedPng,
   encodeRgbaToRgb565,
   formatFpsLine,
+  rgb565ToPngDataUrl,
   rgbaToPngDataUrl,
   lcdCaptureRect,
+  mapYoutubeAudioSnapshot,
   mapYoutubePlayerInfo,
   parseYouTubeVideoId,
   preparePlayerScript,
+  seekPlayerScript,
+  shouldApplyYoutubeQuality,
+  shouldPullYoutubeLcdFrame,
+  shouldResetYoutubeVolume,
   youtubeLoginCookiesPresent,
+  YOUTUBE_QUALITY_PREF,
   youtubeSessionUserAgent,
   SAMPLE_YOUTUBE_VIDEO_ID,
   unwrapPixelBytes,
@@ -135,6 +142,115 @@ describe('mapYoutubePlayerInfo', () => {
   });
 });
 
+describe('shouldApplyYoutubeQuality', () => {
+  const pref = YOUTUBE_QUALITY_PREF;
+
+  it('pins once when quality is still unknown', () => {
+    expect(
+      shouldApplyYoutubeQuality({
+        current: 'unknown',
+        chosen: 'tiny',
+        pref,
+        alreadyPinned: false,
+      })
+    ).toBe(true);
+    expect(
+      shouldApplyYoutubeQuality({
+        current: 'unknown',
+        chosen: 'tiny',
+        pref,
+        alreadyPinned: true,
+      })
+    ).toBe(false);
+  });
+
+  it('does not reapply an allowed or already chosen level', () => {
+    expect(
+      shouldApplyYoutubeQuality({
+        current: 'tiny',
+        chosen: 'tiny',
+        pref,
+        alreadyPinned: true,
+      })
+    ).toBe(false);
+    expect(
+      shouldApplyYoutubeQuality({
+        current: 'small',
+        chosen: 'tiny',
+        pref,
+        alreadyPinned: true,
+      })
+    ).toBe(false);
+  });
+
+  it('pulls a high level back down to the preferred floor', () => {
+    expect(
+      shouldApplyYoutubeQuality({
+        current: 'hd1080',
+        chosen: 'tiny',
+        pref,
+        alreadyPinned: true,
+      })
+    ).toBe(true);
+  });
+});
+
+describe('shouldResetYoutubeVolume', () => {
+  it('resets only when the element is muted or not at full volume', () => {
+    expect(shouldResetYoutubeVolume(false, 1)).toBe(false);
+    expect(shouldResetYoutubeVolume(false, 0.995)).toBe(false);
+    expect(shouldResetYoutubeVolume(true, 1)).toBe(true);
+    expect(shouldResetYoutubeVolume(false, 0.4)).toBe(true);
+  });
+});
+
+describe('shouldPullYoutubeLcdFrame', () => {
+  it('always pulls while playing even if the hidden window starves rVFC', () => {
+    expect(shouldPullYoutubeLcdFrame(false, true, true)).toBe(true);
+    expect(shouldPullYoutubeLcdFrame(false, true, false)).toBe(false);
+    expect(shouldPullYoutubeLcdFrame(true, true, false)).toBe(true);
+    expect(shouldPullYoutubeLcdFrame(false, false, false)).toBe(true);
+  });
+});
+
+describe('rgb565ToPngDataUrl', () => {
+  it('round-trips a red LCD pixel from the same RGB565 buffer', () => {
+    const rgba = Buffer.alloc(240 * 135 * 4, 0);
+    rgba.set([255, 0, 0, 255], 0);
+    const rgb565 = encodeRgbaToRgb565(rgba, 240, 135);
+    const url = rgb565ToPngDataUrl(rgb565);
+    expect(url.startsWith('data:image/png;base64,')).toBe(true);
+    const png = PNG.sync.read(Buffer.from(url.slice('data:image/png;base64,'.length), 'base64'));
+    expect(png.width).toBe(240);
+    expect(png.height).toBe(135);
+    expect(png.data[0]).toBe(255);
+    expect(png.data[1]).toBe(0);
+    expect(png.data[2]).toBe(0);
+  });
+});
+
+describe('mapYoutubeAudioSnapshot', () => {
+  it('keeps volume numbers and ad/quality flags for diagnostics', () => {
+    expect(
+      mapYoutubeAudioSnapshot({
+        volume: 0.5,
+        muted: true,
+        quality: 'tiny',
+        adPlaying: true,
+        qualityApplied: true,
+        volumeReset: false,
+      })
+    ).toEqual({
+      volume: 0.5,
+      muted: true,
+      quality: 'tiny',
+      adPlaying: true,
+      qualityApplied: true,
+      volumeReset: false,
+    });
+  });
+});
+
 describe('preparePlayerScript', () => {
   it('does not force play when the user paused', () => {
     const paused = preparePlayerScript(false);
@@ -142,6 +258,30 @@ describe('preparePlayerScript', () => {
     expect(paused).toContain('const wantPlay = false');
     expect(playing).toContain('const wantPlay = true');
     expect(paused).toContain('if (wantPlay && video.paused && !video.ended)');
+  });
+
+  it('keeps the audio window free of quality pinning and pixel isolation', () => {
+    const audio = preparePlayerScript(true, 'audio');
+    expect(audio).toContain('const lcd = false');
+    expect(audio).toContain('if (video && lcd)');
+    expect(audio).toContain('if (player && lcd)');
+    expect(audio).toContain('video.muted || !(video.volume >= 0.99)');
+  });
+
+  it('mutes the lcd window and pins tiny quality there only', () => {
+    const lcd = preparePlayerScript(true, 'lcd');
+    expect(lcd).toContain('const lcd = true');
+    expect(lcd).toContain('__xpadQualityPinned');
+    expect(lcd).toContain('video.muted = true');
+    expect(lcd).toContain('video.volume = 0');
+    expect(lcd).toContain('xpad-video-only');
+  });
+});
+
+describe('seekPlayerScript', () => {
+  it('seeks the watch player to a clamped time', () => {
+    expect(seekPlayerScript(12.4)).toContain('const seconds = 12.4');
+    expect(seekPlayerScript(12.4)).toContain('seekTo');
   });
 });
 
