@@ -49,3 +49,25 @@ Manual_XPad_mini.pdf
 
 # Internal share review notes; only the public README belongs in the repository
 /share/xpad-mini-now-playing/REVIEW_NOTES.md
+
+# Local deepinit directory maps. Tracked AGENTS.md (root, docs, main/display/device, renderer) stay in git.
+/.github/AGENTS.md
+/.github/workflows/AGENTS.md
+/assets/AGENTS.md
+/assets/clawd/AGENTS.md
+/assets/tray/AGENTS.md
+/build/AGENTS.md
+/docs/images/AGENTS.md
+/docs/images/diagrams/AGENTS.md
+/docs/images/samples/AGENTS.md
+/docs/images/screenshots/AGENTS.md
+/docs/plan/keyboard-settings/AGENTS.md
+/docs/plan/profile-quick-switch/AGENTS.md
+/share/AGENTS.md
+/share/xpad-mini-now-playing/AGENTS.md
+/src/AGENTS.md
+/src/main/input/AGENTS.md
+/src/main/music/AGENTS.md
+/src/preload/AGENTS.md
+/src/renderer/AGENTS.md
+/tools/AGENTS.md
