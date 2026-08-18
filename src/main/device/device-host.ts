@@ -49,6 +49,9 @@ export class DeviceHost extends EventEmitter {
   activeProfileId: ProfileId | null = null;
   keyboardSnapshot: KeyboardDeviceSnapshot | null = null;
   keyboardKeymapBackup: KeyboardKeymapBackup | undefined;
+  /** 직전 HID 한 장 전송 ms. 아직 없으면 null. */
+  lastLcdDrawMs: number | null = null;
+  private lcdDrawMsAvg = 0;
 
   start(
     enabled: boolean,
@@ -95,6 +98,13 @@ export class DeviceHost extends EventEmitter {
         } else {
           request.reject(new Error(message.error ?? '키보드 프로필을 전환하지 못했습니다.'));
         }
+        return;
+      }
+      if (message.type === 'lcdStats') {
+        const drawMs = message.drawMs;
+        this.lcdDrawMsAvg =
+          this.lcdDrawMsAvg <= 0 ? drawMs : Math.round(this.lcdDrawMsAvg * 0.7 + drawMs * 0.3);
+        this.lastLcdDrawMs = this.lcdDrawMsAvg;
         return;
       }
       if (message.type === 'keyboardMappingsConfigured') {
@@ -146,6 +156,8 @@ export class DeviceHost extends EventEmitter {
       this.knobFineVolumeState = 'disabled';
       this.activeProfileId = null;
       this.keyboardSnapshot = null;
+      this.lastLcdDrawMs = null;
+      this.lcdDrawMsAvg = 0;
       this.rejectKeyboardRequests('XPAD 장치 워커가 종료되었습니다.');
       this.rejectProfileRequests('XPAD 장치 워커가 종료되었습니다.');
       this.rejectKeyboardMappingRequests('XPAD 장치 워커가 종료되었습니다.');

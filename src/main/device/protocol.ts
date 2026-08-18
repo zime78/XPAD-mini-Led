@@ -79,6 +79,7 @@ export class XpadProtocol {
   private lastFrame: Buffer | null = null;
   private framesUntilFull = 0;
   private lastLcdWrite = 0;
+  private _lastLcdDrawMs = 0;
   private lastError = 0;
   private fpsWindowStarted = Date.now();
   private fpsDraws = 0;
@@ -102,12 +103,18 @@ export class XpadProtocol {
     return this._activeProfileId;
   }
 
+  /** 직전 0x25 한 장을 보낸 시간(ms). 캡처 자동 주기 입력. */
+  get lastLcdDrawMs(): number {
+    return this._lastLcdDrawMs;
+  }
+
   private reset(): void {
     this._ready = false;
     this._activeProfileId = null;
     this.lastFrame = null;
     this.framesUntilFull = 0;
     this.lastLcdWrite = 0;
+    this._lastLcdDrawMs = 0;
   }
 
   private async verify(): Promise<void> {
@@ -692,7 +699,8 @@ export class XpadProtocol {
     }
     if (sent > 0) this.lastLcdWrite = Date.now();
     this.lastFrame = Buffer.from(rgb565);
-    this.recordLcdFps(Date.now() - drawStarted, sent);
+    this._lastLcdDrawMs = Date.now() - drawStarted;
+    this.recordLcdFps(this._lastLcdDrawMs, sent);
   }
 
   private recordLcdFps(drawMs: number, chunks: number): void {

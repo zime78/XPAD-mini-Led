@@ -19,6 +19,12 @@ import {
   encodeCapturedPng,
   encodeRgbaToRgb565,
   formatFpsLine,
+  nextYoutubeCaptureIntervalMs,
+  youtubeLcdSendIntervalMs,
+  youtubeHidIgnoreRatio,
+  CAPTURE_INTERVAL_DEFAULT_MS,
+  CAPTURE_INTERVAL_MIN_MS,
+  CAPTURE_INTERVAL_MAX_MS,
   rgb565ToPngDataUrl,
   rgbaToPngDataUrl,
   lcdCaptureRect,
@@ -298,6 +304,51 @@ describe('formatFpsLine', () => {
     expect(formatFpsLine('youtube-lcd', 2, { captureFps: 6.5, captureMsAvg: 40 })).toBe(
       '[youtube-lcd] window=2.0s captureFps=6.5 captureMsAvg=40'
     );
+  });
+});
+
+describe('nextYoutubeCaptureIntervalMs', () => {
+  it('uses the default until HID has a measured draw time', () => {
+    expect(nextYoutubeCaptureIntervalMs(null)).toBe(CAPTURE_INTERVAL_DEFAULT_MS);
+    expect(nextYoutubeCaptureIntervalMs(undefined)).toBe(CAPTURE_INTERVAL_DEFAULT_MS);
+    expect(nextYoutubeCaptureIntervalMs(0)).toBe(CAPTURE_INTERVAL_DEFAULT_MS);
+  });
+
+  it('captures at 55% of HID time so one extra frame is waiting', () => {
+    expect(nextYoutubeCaptureIntervalMs(100)).toBe(55);
+    expect(nextYoutubeCaptureIntervalMs(95)).toBe(52);
+    expect(nextYoutubeCaptureIntervalMs(80)).toBe(44);
+  });
+
+  it('stays inside the 40–100ms band', () => {
+    expect(nextYoutubeCaptureIntervalMs(50)).toBe(CAPTURE_INTERVAL_MIN_MS);
+    expect(nextYoutubeCaptureIntervalMs(200)).toBe(CAPTURE_INTERVAL_MAX_MS);
+  });
+});
+
+describe('youtubeHidIgnoreRatio', () => {
+  it('is about 45% when capture is 1.8× HID', () => {
+    expect(youtubeHidIgnoreRatio(18.2, 100)).toBeCloseTo(0.45, 2);
+  });
+
+  it('is near zero when capture matches HID', () => {
+    expect(youtubeHidIgnoreRatio(10, 100)).toBeCloseTo(0, 2);
+  });
+
+  it('is ~96% at the 1ms experiment rate', () => {
+    expect(youtubeHidIgnoreRatio(240, 100)).toBeCloseTo(0.958, 2);
+  });
+});
+
+describe('youtubeLcdSendIntervalMs', () => {
+  it('rounds the last HID draw time', () => {
+    expect(youtubeLcdSendIntervalMs(97)).toBe(97);
+    expect(youtubeLcdSendIntervalMs(96.6)).toBe(97);
+  });
+
+  it('is empty until HID has sent a frame', () => {
+    expect(youtubeLcdSendIntervalMs(null)).toBeNull();
+    expect(youtubeLcdSendIntervalMs(0)).toBeNull();
   });
 });
 

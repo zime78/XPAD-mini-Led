@@ -20,6 +20,7 @@ import {
   youtubePlaybackStateLabel,
   youtubePlaybackTimeLabel,
   youtubePlaybackTitle,
+  youtubeLcdDelayLabel,
 } from '../youtube-playback-label';
 import { PlayerStatus } from './player-status';
 import { QuickProfileSwitch } from './quick-profile-switch';
@@ -76,6 +77,9 @@ export function PlayerView({
   const youtubeQueue = youtubePlaybackQueueLabel(status.youtubePlayback);
   const youtubeTime = youtubePlaybackTimeLabel(status.youtubePlayback);
   const youtubeProgress = youtubePlaybackProgress(status.youtubePlayback);
+  const delayLabel = status.youtubeLcdActive
+    ? youtubeLcdDelayLabel(status.youtubeLcdDelayMs)
+    : null;
   const activeProfile =
     status.keyboardProfileState.profiles[status.keyboardProfileState.activeProfileId];
   const showYoutubeAdd =
@@ -178,6 +182,11 @@ export function PlayerView({
             <div className="preview-empty">
               {status.youtubeLcdActive ? 'YouTube 준비 중' : 'LCD 미리보기 준비 중'}
             </div>
+          )}
+          {delayLabel && (
+            <span className="lcd-delay" aria-label={`기기 전송 간격 ${delayLabel}`}>
+              {delayLabel}
+            </span>
           )}
         </div>
         {!mini && (

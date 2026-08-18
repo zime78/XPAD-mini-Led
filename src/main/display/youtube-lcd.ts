@@ -36,8 +36,46 @@ const VIEW_WIDTH = LCD_WIDTH;
 const VIEW_HEIGHT = LCD_HEIGHT;
 /** YouTube가 제공하는 최저 화질부터 고른다. tiny=144p, 없으면 small=240p. */
 export const YOUTUBE_QUALITY_PREF = ['tiny', 'small', 'medium'] as const;
-/** LCD 창만 탭한다. 소리 창에서는 뽑지 않는다. HID ~5fps. */
-const CAPTURE_INTERVAL_MS = 200;
+/** LCD 창만 탭한다. 소리 창에서는 뽑지 않는다. */
+export const CAPTURE_INTERVAL_MIN_MS = 40;
+export const CAPTURE_INTERVAL_MAX_MS = 100;
+/** HID 전송이 끝나기 전에 다음 장을 준비한다. 1이면 전송과 같은 주기, 작을수록 겹침이 커진다. */
+export const CAPTURE_HID_OVERLAP = 0.55;
+/** HID 실측 전이거나 장치 없이 돌릴 때. 실측 hidDrawMs≈95면 같은 공식으로 52ms가 된다. */
+export const CAPTURE_INTERVAL_DEFAULT_MS = 55;
+
+/**
+ * HID 한 장 전송 시간으로 다음 캡처 주기를 정한다.
+ * 전송보다 조금 빨리 뽑아, 워커가 최신 장만 보낼 때 한 장 겹치게 둔다.
+ */
+export function nextYoutubeCaptureIntervalMs(hidDrawMs: number | null | undefined): number {
+  const hid = Number(hidDrawMs);
+  if (!Number.isFinite(hid) || hid <= 0) return CAPTURE_INTERVAL_DEFAULT_MS;
+  return Math.min(
+    CAPTURE_INTERVAL_MAX_MS,
+    Math.max(CAPTURE_INTERVAL_MIN_MS, Math.round(hid * CAPTURE_HID_OVERLAP))
+  );
+}
+
+/** 캡처한 장 중 HID가 미처 못 보내는 비율. 0이면 여유 없음, 1이면 전부 버려짐. */
+export function youtubeHidIgnoreRatio(
+  videoFps: number,
+  hidDrawMs: number | null | undefined
+): number {
+  const hid = Number(hidDrawMs);
+  if (!Number.isFinite(videoFps) || videoFps <= 0 || !Number.isFinite(hid) || hid <= 0) {
+    return 0;
+  }
+  return Math.max(0, Math.min(1, 1 - 1000 / hid / videoFps));
+}
+
+/** 기기로 장을 보낸 간격. 직전 0x25 한 장 전송 ms. */
+export function youtubeLcdSendIntervalMs(hidDrawMs: number | null | undefined): number | null {
+  const hid = Number(hidDrawMs);
+  if (!Number.isFinite(hid) || hid <= 0) return null;
+  return Math.round(hid);
+}
+
 const LCD_SYNC_DRIFT_SEC = 1.5;
 const FPS_LOG_INTERVAL_MS = 2000;
 /** 제목·상태는 캡처보다 드물게 읽는다. 음성 스레드를 건드리지 않게 1초. */
@@ -141,6 +179,13 @@ class IntervalMeter {
   private empty = 0;
   private pullMs = 0;
   private encodeMs = 0;
+  private intervalMs = CAPTURE_INTERVAL_DEFAULT_MS;
+  private hidDrawMs: number | null = null;
+
+  setCadence(intervalMs: number, hidDrawMs: number | null): void {
+    this.intervalMs = intervalMs;
+    this.hidDrawMs = hidDrawMs;
+  }
 
   drop(): void {
     this.dropped += 1;
@@ -177,11 +222,15 @@ class IntervalMeter {
     if (elapsedMs < FPS_LOG_INTERVAL_MS) return;
     const seconds = elapsedMs / 1000;
     const n = Math.max(1, this.frames);
+    const videoFps = this.videoFrames / seconds;
+    const attempts = this.videoFrames + this.dropped;
     const line = formatFpsLine('youtube-lcd', seconds, {
-      videoFps: this.videoFrames / seconds,
-      pageFps: this.pageFrames / seconds,
+      intervalMs: this.intervalMs,
+      hidDrawMs: this.hidDrawMs ?? 0,
+      videoFps,
       dropFps: this.dropped / seconds,
-      emptyFps: this.empty / seconds,
+      ignorePct: attempts > 0 ? (this.dropped / attempts) * 100 : 0,
+      hidIgnorePct: youtubeHidIgnoreRatio(videoFps, this.hidDrawMs) * 100,
       pullMsAvg: this.pullMs / n,
       encodeMsAvg: this.encodeMs / n,
     });
@@ -200,6 +249,8 @@ export interface YouTubeLcdStartOptions {
   onInfo?: (info: YoutubePlayerSnapshot) => void;
   onEnded?: () => void;
   onAudioChange?: (snapshot: YoutubeAudioSnapshot) => void;
+  /** 직전 HID 한 장 전송 ms. 없으면 기본 55ms로 시작한다. */
+  getHidDrawMs?: () => number | null;
 }
 
 /** RGBA를 LCD 미리보기 PNG data URL로 만든다. */
@@ -999,10 +1050,19 @@ export class YouTubeLcdPlayer {
   private lastLoggedTap: string | null = null;
   private lastAudio: YoutubeAudioSnapshot | null = null;
   private onAudioChange: ((snapshot: YoutubeAudioSnapshot) => void) | null = null;
+  private lastCaptureIntervalMs = CAPTURE_INTERVAL_DEFAULT_MS;
+  private lastHidDrawMs: number | null = null;
+  private captureGen = 0;
   private readonly meter = new IntervalMeter();
 
   get active(): boolean {
     return this.audioWindow !== null && !this.audioWindow.isDestroyed();
+  }
+
+  /** 직전 HID 한 장 전송 간격(ms). 아직 안 보냈으면 null. */
+  get delayMs(): number | null {
+    if (!this.active) return null;
+    return youtubeLcdSendIntervalMs(this.lastHidDrawMs);
   }
 
   start(options: YouTubeLcdStartOptions): void {
@@ -1021,7 +1081,7 @@ export class YouTubeLcdPlayer {
     this.audioWindow = audio;
     this.lcdWindow = lcd;
     console.log(
-      `[youtube-lcd] start video=${options.videoId} url=${watchUrl(options.videoId)} source=split-audio-lcd encode=main-rgb565 captureIntervalMs=${CAPTURE_INTERVAL_MS} lcd=${LCD_WIDTH}x${LCD_HEIGHT}`
+      `[youtube-lcd] start video=${options.videoId} url=${watchUrl(options.videoId)} source=split-audio-lcd encode=main-rgb565 capture=auto overlap=${CAPTURE_HID_OVERLAP} intervalMs=${CAPTURE_INTERVAL_DEFAULT_MS} lcd=${LCD_WIDTH}x${LCD_HEIGHT}`
     );
 
     const handleClosed = () => {
@@ -1077,9 +1137,28 @@ export class YouTubeLcdPlayer {
       if (this.lcdWindow !== lcd || lcd.isDestroyed()) return;
       prepareLcd();
       if (!this.timer) {
-        this.timer = setInterval(() => {
-          void this.capture(lcd, options.onFrame, options.onPreview);
-        }, CAPTURE_INTERVAL_MS);
+        const gen = this.captureGen;
+        const run = (): void => {
+          if (this.captureGen !== gen || this.lcdWindow !== lcd || lcd.isDestroyed()) return;
+          const hidMs = options.getHidDrawMs?.() ?? null;
+          const intervalMs = nextYoutubeCaptureIntervalMs(hidMs);
+          this.lastHidDrawMs = hidMs;
+          this.meter.setCadence(intervalMs, hidMs);
+          if (Math.abs(intervalMs - this.lastCaptureIntervalMs) >= 5) {
+            console.log(
+              `[youtube-lcd] capture auto intervalMs=${intervalMs} hidDrawMs=${hidMs ?? 'none'} overlap=${CAPTURE_HID_OVERLAP}`
+            );
+          }
+          this.lastCaptureIntervalMs = intervalMs;
+          const started = Date.now();
+          void this.capture(lcd, options.onFrame, options.onPreview).finally(() => {
+            if (this.captureGen !== gen || this.lcdWindow !== lcd || lcd.isDestroyed()) return;
+            const wait = Math.max(0, intervalMs - (Date.now() - started));
+            this.timer = setTimeout(run, wait);
+          });
+        };
+        this.lastCaptureIntervalMs = nextYoutubeCaptureIntervalMs(options.getHidDrawMs?.() ?? null);
+        this.timer = setTimeout(run, 0);
       }
     });
     this.playTimer = setInterval(() => {
@@ -1232,7 +1311,8 @@ export class YouTubeLcdPlayer {
   }
 
   private clearTimer(): void {
-    if (this.timer) clearInterval(this.timer);
+    this.captureGen += 1;
+    if (this.timer) clearTimeout(this.timer);
     this.timer = null;
     if (this.playTimer) clearInterval(this.playTimer);
     this.playTimer = null;
@@ -1242,6 +1322,7 @@ export class YouTubeLcdPlayer {
     this.lastLoggedQuality = null;
     this.lastLoggedTap = null;
     this.lastAudio = null;
+    this.lastHidDrawMs = null;
     this.onAudioChange = null;
     this.meter.reset();
   }

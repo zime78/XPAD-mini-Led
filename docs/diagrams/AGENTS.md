@@ -15,7 +15,7 @@
 | `runtime-architecture.architecture.json` | 위 HTML의 구조 데이터 |
 | `key-mapping.html` | 노브·하단 키·F16–F20 매핑 다이어그램 |
 | `key-mapping.workflow.json` | 위 HTML의 워크플로 데이터 |
-| `youtube-pipeline.html` | 소리 창 / 음소거 LCD 창 분리 → RGB565 → HID·미리보기 |
+| `youtube-pipeline.html` | 소리/LCD 창 분리 → HID×0.55 캡처 → 최신 1장 HID·베젤 전송 간격 |
 | `youtube-pipeline.process.json` | 위 그림의 process 입력 |
 
 ## Subdirectories

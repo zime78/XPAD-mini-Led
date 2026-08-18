@@ -161,6 +161,7 @@ function currentStatus(): StatusSnapshot {
     monitorError: monitor?.lastError ?? null,
     previewDataUrl,
     youtubeLcdActive: Boolean(youtubeLcd?.active),
+    youtubeLcdDelayMs: youtubeLcd?.active ? youtubeLcd.delayMs : null,
     youtubePlayback: youtubeLcd?.active ? youtubePlayback : null,
     youtubeAccount,
     knobFineVolumeState: fineVolumeError
@@ -470,6 +471,7 @@ function startYoutubeLcdSample(rawId = youtubeVideoIdToPlay()): void {
         : frame;
       if (!hidDisabled && deviceHost?.protocolReady) deviceHost.setFrame(painted);
     },
+    getHidDrawMs: () => deviceHost?.lastLcdDrawMs ?? null,
     onPreview: (dataUrl) => {
       if (!youtubeLcd?.active) return;
       previewDataUrl = youtubeVolumeOverlay

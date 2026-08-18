@@ -17,7 +17,7 @@
 |-----------|---------|
 | `keyboard-settings/` | 키보드 설정·앱 실행·백업 계획 (see `keyboard-settings/AGENTS.md`) |
 | `profile-quick-switch/` | 재생 화면 P1–P5 단축 전환 (see `profile-quick-switch/AGENTS.md`) |
-| `youtube-p5/` | P5 YouTube 재생·구조 검토 (`PLAN.md`, `STRUCTURE_REVIEW.md`) |
+| `youtube-p5/` | P5 YouTube 구조 정본. 자동 캡처·전송 간격 표시는 `STRUCTURE_REVIEW.md` |
 
 ## For AI Agents
 

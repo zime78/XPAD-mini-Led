@@ -10,8 +10,8 @@
 | 대상 장치 | Pulsar Lab XPAD Mini |
 | 개발 위치 | 프로젝트 저장소 루트 |
 | 앱 식별자 | `kr.co.zime.xpad-mini-now-playing` |
-| 실기기 최종 확인일 | 2026-07-22 |
-| 문서·빌드 확인일 | 2026-07-28 |
+| 실기기 최종 확인일 | 2026-08-18 |
+| 문서·빌드 확인일 | 2026-08-18 |
 
 이 문서는 현재 저장소에 구현된 기능, 내부 구조, XPAD Mini 연결 방식, 빌드·서명·설치
 결과와 실기기 검증 범위를 기록한다. 저수준 명령의 전체 목록과 역공학 근거는
@@ -37,7 +37,7 @@ macOS에서 실행되는 데스크톱 앱이 Spotify 또는 Apple Music의 현�
 | 미세 볼륨 | XPAD 노브 한 칸을 실제 출력 단계 한 칸과 매칭, 클릭 Mute 유지 | 완료 |
 | 볼륨 피드백 | 조절 후 실제 출력값을 LCD·앱 미리보기에 표시하고 1.6초 뒤 곡 화면 복원 | 완료 |
 | 빠른 프로필 전환 | 재생 화면 P1~P5 버튼, 실제 RAM 프로필 선택·readback, 하단 3키 요약·로컬 라우터 동기화 | 완료 |
-| YouTube P5 | 로그인된 공식 watch. 소리 창과 음소거 LCD 창을 같은 세션으로 분리. 기기·미리보기는 같은 RGB565 | 완료 |
+| YouTube P5 | 로그인된 공식 watch. 소리/LCD 창 분리. HID×0.55 자동 캡처, 최신 1장만 전송. 베젤에 전송 간격 | 완료 |
 | 자동 복구 | 장치 분리 후 3초 간격 재연결 | 완료 |
 | 설정 화면 | 음악 표시 설정, 노브 미세 볼륨 활성화·단위, 로그인 실행 | 완료 |
 | 키보드 설정 | 독립 창, Profile 1 고정 음악 제어, Profile 2~5 하단 3버튼 실기기 조회·로컬 편집, 앱 실행, 사용자 백업 최대 10개 | 완료 |
@@ -53,7 +53,9 @@ flowchart LR
     A[Spotify / Apple Music] -->|AppleScript 조회| B[NowPlayingMonitor]
     B -->|TrackInfo| C[240×135 Canvas 렌더러]
     C -->|240×135 RGB565| D[Device Worker]
+    Y[YouTube 소리 창 + LCD 창] -->|RGB565 최신 1장| D
     D -->|Sayo API v2 / HID 0x25| E[XPAD Mini LCD RAM]
+    D -->|lcdStats drawMs| Y
     F -->|P1~P5 선택 IPC| D
     D -->|0x02 선택·readback| I[XPAD 실제 프로필]
     D -->|0x10 / F20·F19 임시 매핑| G[XPAD 노브 좌·우]
@@ -61,6 +63,7 @@ flowchart LR
     H -->|실제 출력값 readback| C
     B --> F[Electron 설정 화면·트레이]
     C -->|RGB565 미리보기| F
+    Y -->|같은 RGB565 PNG + 전송 간격| F
     D -->|연결·프로토콜 상태| F
 ```
 
@@ -196,16 +199,20 @@ readback으로 확인한다. 설정 비활성화와 정상 종료 때 출고 Vol
 ### 4.45 YouTube P5
 
 구현 파일: [`src/main/display/youtube-lcd.ts`](../src/main/display/youtube-lcd.ts),
-[`src/main/display/youtube-library.ts`](../src/main/display/youtube-library.ts).
+[`src/main/display/youtube-library.ts`](../src/main/display/youtube-library.ts),
+[`src/main/device/device-host.ts`](../src/main/device/device-host.ts),
+[`src/renderer/src/components/player-view.tsx`](../src/renderer/src/components/player-view.tsx).
 구조 정본: [`docs/plan/youtube-p5/STRUCTURE_REVIEW.md`](./plan/youtube-p5/STRUCTURE_REVIEW.md).
 
 인증이 필수이므로 스트림을 앱이 직접 받아 재인코딩하지 않는다. Profile 5는 공식
 `youtube.com/watch`를 같은 파티션 `persist:youtube-lcd`로 연다. 숨은 창을 둘로 나눈다.
 
 - 소리 창: 재생만 한다. `getImageData`와 `setPlaybackQuality`를 쓰지 않는다.
-- LCD 창: 음소거, `tiny`(144p) 고정, 200ms마다 240×135 RGB565를 뽑아 `0x25`로 보낸다.
-- 앱 미리보기: 기기로 보낸 그 RGB565를 PNG로 복원해 같은 주기로 표시한다.
-- 위치가 1.5초 이상 벌어지면 LCD 창만 소리 창에 맞춘다. 광고 타이밍 차이는 허용한다.
+- LCD 창: 음소거, `tiny`(144p) 고정. 캡처 주기는 `clamp(HID drawMs × 0.55, 40, 100)`이다. HID 실측 전에는 55ms. 뽑은 장의 약 45%는 워커가 최신 1장만 보내며 버린다. 1ms 고정은 쓰지 않는다(실측에서 ~96% 폐기).
+- 전송: 워커 `pumpLcd`가 한 장이 끝나는 즉시 대기 중인 최신 장을 보낸다. 기기 상한은 전체 장 기준 약 10fps(`hidDrawMs` 약 95–110ms). 전송 후 `lcdStats`로 `lastLcdDrawMs`를 갱신한다.
+- 앱 미리보기: 기기로 보낸 그 RGB565를 PNG로 복원해 같은 캡처 주기로 표시한다.
+- 베젤 우측 하단 숫자는 끝-끝 딜레이가 아니라 직전 HID 전송 간격(`youtubeLcdSendIntervalMs` / `StatusSnapshot.youtubeLcdDelayMs`)이다.
+- 위치가 1.5초 이상 벌어지면 LCD 창만 소리 창에 맞춘다. 이 오차는 베젤 숫자에 넣지 않는다. 광고 타이밍 차이는 허용한다.
 
 ### 4.5 설정 화면과 트레이
 
@@ -526,6 +533,7 @@ notarytool 자격정보를 설정한 뒤 notarization과 staple 검증을 추가
 | LCD 렌더링 품질 | 단어·한글·emoji 그래핌 줄바꿈, RGB565 ordered dithering, little-endian 인코딩과 재구성 프리뷰를 단위 테스트로 확인. `dev-ui`에서 `Break My Heart`가 `Break My` / `Heart`로 표시되고 렌더 오류가 없음을 확인 |
 | 음악 정보 | Apple Music 곡명·아티스트·앨범·앨범아트 표시 확인 |
 | 실제 LCD | 연결된 XPAD Mini LCD의 음악 화면 갱신 확인 |
+| YouTube P5 | 소리/LCD 창 분리, `capture=auto` `hidIgnorePct≈45`, 베젤이 `hidDrawMs`(약 95–110ms)를 표시하는지 서명 앱에서 확인 |
 
 renderer 공개 UI 동작은 Vitest와 Testing Library로 자동 검증한다. HID 프로토콜과 실제 LCD는
 자동화된 통합 테스트가 없어 정적 검사, 빌드, 서명 검사와 연결된 실기기의 수동 E2E 확인을
@@ -566,6 +574,8 @@ renderer 공개 UI 동작은 Vitest와 Testing Library로 자동 검증한다. H
 7. 키보드 설정은 P1을 고정하고 P2~P5 실제 하단 키를 읽은 뒤 원래 프로필로 복원하지만, XPAD 하단 버튼을
    쓰는 장치 적용은 일반 키 전체 rollback과 실기기 실패 경로 검증이 끝날 때까지 지원하지
    않는다.
+8. YouTube LCD는 HID 대역 때문에 전체 장 기준 약 10fps가 상한이다. 캡처를 더 빨리 해도
+   전송 간격은 줄지 않고 겹침(무시)만 커진다. 소리 창과 LCD 창 시각은 1.5초까지 어긋날 수 있다.
 
 ## 11. 관련 문서와 참고 자료
 
@@ -576,6 +586,8 @@ renderer 공개 UI 동작은 Vitest와 Testing Library로 자동 검증한다. H
 - [저수준 HID 프로토콜](./PROTOCOL.md)
 - [키보드 설정 기능 계획·구현 현황](./plan/keyboard-settings/PLAN.md)
 - [재생 화면 P1~P5 단축 전환 설계·구현 기록](./plan/profile-quick-switch/GUI.md)
+- [YouTube P5 현재 구조](./plan/youtube-p5/STRUCTURE_REVIEW.md)
+- [YouTube LCD 처리 워크플로](./diagrams/youtube-pipeline.html)
 
 외부 자료:
 

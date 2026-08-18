@@ -58,7 +58,8 @@ export type WorkerOutMessage =
       snapshot?: KeyboardDeviceSnapshot;
       backup?: KeyboardKeymapBackup;
       error?: string;
-    };
+    }
+  | { type: 'lcdStats'; drawMs: number };
 
 const port = parentPort;
 if (!port) throw new Error('device-worker must run in a worker thread');
@@ -120,6 +121,9 @@ async function pumpLcd(): Promise<void> {
     while (currentFrame && protocol.ready && !streamingPaused) {
       const frame = currentFrame;
       await protocol.drawLcdFrame(frame);
+      if (protocol.lastLcdDrawMs > 0) {
+        port!.postMessage({ type: 'lcdStats', drawMs: protocol.lastLcdDrawMs } satisfies WorkerOutMessage);
+      }
       if (currentFrame === frame) break;
     }
   } finally {

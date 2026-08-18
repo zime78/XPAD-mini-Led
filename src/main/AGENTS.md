@@ -24,7 +24,7 @@ Electron main 프로세스. 트레이·창·IPC 오케스트레이션, `userData
 | Directory | Purpose |
 |-----------|---------|
 | `device/` | HID + Sayo 프로토콜 + worker (see `device/AGENTS.md`) |
-| `display/` | 음악 프레임 + YouTube 소리/LCD 창 분리 (see `display/AGENTS.md`) |
+| `display/` | 음악 프레임 + YouTube 소리/LCD 분리, HID×0.55 자동 캡처 (see `display/AGENTS.md`) |
 | `input/` | F19/F20 미세 볼륨, F16–F18 키 액션 (see `input/AGENTS.md`) |
 | `music/` | osascript now-playing / playback (see `music/AGENTS.md`) |
 

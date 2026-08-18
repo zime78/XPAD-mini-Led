@@ -40,6 +40,11 @@ export function youtubePlaybackTimeLabel(info: YoutubePlaybackInfo | null): stri
   return `${formatPlaybackClock(info.position)} / ${formatPlaybackClock(info.duration)}`;
 }
 
+export function youtubeLcdDelayLabel(delayMs: number | null | undefined): string | null {
+  if (delayMs == null || !Number.isFinite(delayMs) || delayMs < 0) return null;
+  return `${Math.round(delayMs)}ms`;
+}
+
 export function youtubePlaybackProgress(info: YoutubePlaybackInfo | null): number | null {
   if (!info || info.duration <= 0) return null;
   return Math.min(100, Math.max(0, (info.position / info.duration) * 100));

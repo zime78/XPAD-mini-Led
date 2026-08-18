@@ -177,15 +177,15 @@
       <h1>YouTube LCD 처리 워크플로</h1>
       <p class="subtitle">
         공식 watch 페이지를 숨은 Chromium 창에서 재생한다. 디코드와 스피커는 렌더러에 남고,
-        같은 로그인 세션의 소리 창은 재생만 하고, 음소거 LCD 창에서 200ms마다 RGB565를 뽑아
-        기기와 미리보기에 같은 장을 보낸다.
+        같은 로그인 세션의 소리 창은 재생만 하고, 음소거 LCD 창에서 HID 전송×0.55마다 RGB565를 뽑아
+        기기에는 최신 1장만 보낸다. 미리보기 베젤은 그 전송 간격을 보여 준다.
       </p>
     </div>
 
     <div class="diagram-container">
       <svg viewBox="0 0 840 456" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="youtube-pipeline-title youtube-pipeline-desc">
         <title id="youtube-pipeline-title">YouTube LCD 처리 워크플로</title>
-        <desc id="youtube-pipeline-desc">로그인된 공식 watch를 소리 창과 음소거 LCD 창으로 나눈다. 픽셀은 LCD 창에서만 뽑아 RGB565로 기기와 미리보기에 같은 주기로 보낸다.</desc>
+        <desc id="youtube-pipeline-desc">로그인된 공식 watch를 소리 창과 음소거 LCD 창으로 나눈다. 픽셀은 LCD 창에서만 뽑아 RGB565로 보내고, 워커는 최신 1장만 HID로 전송한다.</desc>
         <defs>
           <pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse">
             <circle cx="11" cy="11" r="0.8" fill="rgba(45,49,66,0.10)"/>
@@ -300,7 +300,7 @@
         <rect x="488" y="128" width="14" height="10" rx="2" fill="rgba(235,108,54,0.20)"/>
         <text x="495" y="136" fill="#eb6c36" font-size="6" font-family="'Geist Mono', monospace" font-weight="600" text-anchor="middle">CHR</text>
         <text x="534" y="150" fill="#2d3142" font-size="9" font-family="'Geist', 'Apple SD Gothic Neo', sans-serif" font-weight="600" text-anchor="middle">LCD 창 탭</text>
-        <text x="534" y="164" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">음소거 240×135</text>
+        <text x="534" y="164" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">auto×0.55 240×135</text>
         <text x="534" y="176" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">getImageData</text>
         <rect x="488" y="178" width="16" height="8" rx="2" fill="#7c8f6f"/>
         <text x="496" y="184" fill="#ffffff" font-size="5" font-family="'Geist Mono', monospace" font-weight="700" text-anchor="middle">LS</text>
@@ -385,7 +385,7 @@
         <line x1="200" y1="432" x2="232" y2="432" stroke="#4f5d75" stroke-width="1" marker-end="url(#arrow)"/>
         <text x="240" y="435" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">handoff</text>
         <line x1="304" y1="432" x2="336" y2="432" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow-sm)"/>
-        <text x="344" y="435" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">2s prepare / 200ms poll</text>
+        <text x="344" y="435" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">2s prepare / auto×0.55</text>
         <line x1="500" y1="432" x2="532" y2="432" stroke="#eb6c36" stroke-width="1.2" marker-end="url(#arrow-accent)"/>
         <text x="540" y="435" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace">pixel path</text>
       </svg>
@@ -414,9 +414,9 @@
         </div>
         <ul>
           <li>오디오는 소리 창 <code>AudioService</code> → CoreAudio. LCD 창은 음소거다.</li>
-          <li>LCD 창만 200ms마다 <code>getImageData</code>로 240×135를 뽑는다.</li>
-          <li>메인에서 RGB565-LE (64800B). 미리보기는 그 버퍼를 PNG로 복원한다.</li>
-          <li>워커가 0x25 청크(최대 1012B)로 diff 전송. 220ms마다 재전송.</li>
+          <li>LCD 창만 HID <code>drawMs×0.55</code>(40–100ms)마다 <code>getImageData</code>로 240×135를 뽑는다.</li>
+          <li>메인에서 RGB565-LE (64800B). 미리보기는 그 버퍼를 PNG로 복원한다. 베젤은 전송 간격.</li>
+          <li>워커가 0x25 최신 1장만 전송. 유휴 시 220ms 재전송. 전송 후 <code>lcdStats</code>.</li>
           <li>위치가 1.5초 이상 벌어지면 LCD 창만 소리 창에 맞춘다.</li>
         </ul>
       </div>
@@ -429,7 +429,8 @@
         <ul>
           <li>콘솔 <code>source=split-audio-lcd</code> 이면 두 창 분리.</li>
           <li><code>lcd quality=tiny</code> — LCD 창 화질 고정.</li>
-          <li><code>[youtube-lcd] videoFps≈5</code> — LCD 탭 200ms.</li>
+          <li><code>capture=auto</code> · <code>hidIgnorePct≈45</code> — HID보다 조금 빨리 뽑아 한 장 겹침.</li>
+          <li>베젤 <code>NNms</code>는 전송 간격(<code>hidDrawMs</code>). 끝-끝 딜레이가 아니다.</li>
           <li>앱 미리보기와 실기기 장이 같이 끊기면 정상(같은 RGB565).</li>
           <li>광고 타이밍이 창마다 달라도 허용.</li>
         </ul>

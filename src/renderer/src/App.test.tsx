@@ -61,6 +61,7 @@ const status: StatusSnapshot = {
   monitorError: null,
   previewDataUrl: null,
   youtubeLcdActive: false,
+  youtubeLcdDelayMs: null,
   youtubePlayback: null,
   youtubeAccount: EMPTY_YOUTUBE_ACCOUNT,
   knobFineVolumeState: 'active',
@@ -194,6 +195,7 @@ describe('XPAD Mini Now Playing 화면', () => {
     const youtubeStatus = {
       ...status,
       youtubeLcdActive: true,
+      youtubeLcdDelayMs: 97,
       previewDataUrl: 'data:image/png;base64,aaa',
       youtubePlayback: {
         videoId: 'vCFfPqLVp0U',
@@ -230,6 +232,8 @@ describe('XPAD Mini Now Playing 화면', () => {
     expect(profile5.className).toContain('youtube');
     expect(profile5.getAttribute('aria-pressed')).toBe('true');
     expect(within(playerPanel).getByAltText('YouTube LCD 미리보기')).toBeTruthy();
+    expect(within(playerPanel).getByLabelText('기기 전송 간격 97ms')).toBeTruthy();
+    expect(within(playerPanel).getByText('97ms')).toBeTruthy();
     expect(within(playerPanel).getByRole('heading', { name: '이예준 피크닉버스킹' })).toBeTruthy();
     expect(within(playerPanel).getByText('이예준')).toBeTruthy();
     expect(within(playerPanel).getByText('1 / 1')).toBeTruthy();

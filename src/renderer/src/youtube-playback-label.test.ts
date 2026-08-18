@@ -8,6 +8,7 @@ import {
   youtubePlaybackStateLabel,
   youtubePlaybackTimeLabel,
   youtubePlaybackTitle,
+  youtubeLcdDelayLabel,
 } from './youtube-playback-label';
 
 const info: YoutubePlaybackInfo = {
@@ -42,5 +43,11 @@ describe('youtube playback labels', () => {
     expect(youtubePlaybackTimeLabel(null)).toBeNull();
     expect(youtubePlaybackProgress(null)).toBeNull();
     expect(youtubePlaybackStateLabel({ ...info, adPlaying: true })).toBe('광고');
+  });
+
+  it('prints a compact delay label', () => {
+    expect(youtubeLcdDelayLabel(128)).toBe('128ms');
+    expect(youtubeLcdDelayLabel(128.4)).toBe('128ms');
+    expect(youtubeLcdDelayLabel(null)).toBeNull();
   });
 });

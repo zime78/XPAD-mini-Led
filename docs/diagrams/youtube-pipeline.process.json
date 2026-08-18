@@ -54,7 +54,7 @@
       "lane": "CHR",
       "step": 3,
       "title": "LCD 창 탭",
-      "sub": "음소거 · 240×135",
+      "sub": "음소거 · auto×0.55",
       "tool": "getImageData",
       "chips": { "in": "LS", "out": "FL" },
       "focal": true
@@ -71,7 +71,7 @@
       "lane": "HID",
       "step": 5,
       "title": "LCD 전송",
-      "sub": "0x25 diff · 220ms",
+      "sub": "0x25 최신 1장",
       "tool": "drawLcdFrame",
       "chips": { "in": "FL" }
     }
@@ -89,7 +89,8 @@
   "notes": [
     "같은 persist:youtube-lcd 세션으로 소리 창과 음소거 LCD 창을 나눈다.",
     "getImageData 와 setPlaybackQuality 는 LCD 창만. 소리 창은 재생만 한다.",
-    "미리보기는 기기로 보낸 RGB565 를 PNG 로 복원해 같은 200ms 주기로 보여 준다.",
+    "미리보기는 기기로 보낸 RGB565 를 PNG 로 복원한다. 베젤 숫자는 직전 HID 전송 간격이다.",
+    "캡처 주기는 HID drawMs×0.55 (40–100ms). 워커는 최신 1장만 보내고 lcdStats 로 주기를 맞춘다.",
     "hwdecode=on 은 로그 라벨이다. 앱이 VideoToolbox 를 직접 호출하지 않는다."
   ]
 }
