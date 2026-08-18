@@ -75,8 +75,8 @@ const initialKnobConfig = workerData as {
 
 let currentFrame: Buffer | null = null;
 let timer: NodeJS.Timeout | null = null;
-let epoch = 0;
 let streamingPaused = false;
+let lcdPumping = false;
 let knobEnabled = initialKnobConfig.enabled;
 let knobBackup = initialKnobConfig.backup;
 let knobFineVolumeState: KnobFineVolumeState = knobEnabled ? 'pending' : 'disabled';
@@ -105,14 +105,28 @@ function reportStatus(): void {
 
 function scheduleStreaming(): void {
   if (streamingPaused) return;
-  if (timer) clearTimeout(timer);
-  const currentEpoch = ++epoch;
-  const tick = async () => {
-    if (currentEpoch !== epoch) return;
-    if (currentFrame && protocol.ready) await protocol.drawLcdFrame(currentFrame);
-    if (currentEpoch === epoch) timer = setTimeout(() => void tick(), 220);
-  };
-  void tick();
+  if (timer) {
+    clearTimeout(timer);
+    timer = null;
+  }
+  void pumpLcd();
+}
+
+/** 최신 프레임만 HID로 직렬 전송한다. 영상처럼 프레임이 자주 바뀌면 전송이 끝나는 즉시 다음 장을 보낸다. */
+async function pumpLcd(): Promise<void> {
+  if (lcdPumping || streamingPaused) return;
+  lcdPumping = true;
+  try {
+    while (currentFrame && protocol.ready && !streamingPaused) {
+      const frame = currentFrame;
+      await protocol.drawLcdFrame(frame);
+      if (currentFrame === frame) break;
+    }
+  } finally {
+    lcdPumping = false;
+  }
+  if (streamingPaused || !currentFrame) return;
+  timer = setTimeout(() => void pumpLcd(), 220);
 }
 
 device.on('connect', reportStatus);
@@ -137,7 +151,6 @@ function pauseStreaming(): void {
   streamingPaused = true;
   if (timer) clearTimeout(timer);
   timer = null;
-  epoch++;
 }
 
 function resumeStreaming(): void {

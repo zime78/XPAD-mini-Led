@@ -37,6 +37,11 @@ import { DiagnosticLog } from './diagnostic-log';
 import { DeviceHost } from './device/device-host';
 import { renderTrackFrame } from './display/frame-renderer';
 import type { VolumeFeedback } from './display/volume-overlay';
+import {
+  parseYouTubeVideoId,
+  SAMPLE_YOUTUBE_VIDEO_ID,
+  YouTubeLcdPlayer,
+} from './display/youtube-lcd';
 import { KeyboardBackupStore } from './keyboard-backups';
 import {
   isLaunchableAppPath,
@@ -78,7 +83,14 @@ let volumeFeedbackTimer: ReturnType<typeof setTimeout> | null = null;
 let profileSwitching = false;
 let profileSwitchError: string | null = null;
 let playerViewMode: PlayerViewMode = 'expanded';
+let youtubeLcd: YouTubeLcdPlayer | null = null;
 const hidDisabled = process.env.XPAD_DISABLE_HID === '1';
+const youtubeTestRequested = process.env.XPAD_YOUTUBE_TEST === '1';
+// 음성은 Mac에서 재생한다. 소프트 디코드·백그라운드 스로틀은 오디오 언더런을 만든다.
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
+app.commandLine.appendSwitch('disable-renderer-backgrounding');
+app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
+app.commandLine.appendSwitch('disable-background-timer-throttling');
 const VOLUME_FEEDBACK_DURATION_MS = 1600;
 const PLAYER_WINDOW_SIZES: Record<PlayerViewMode, { width: number; height: number }> = {
   expanded: { width: 680, height: 320 },
@@ -180,6 +192,15 @@ function updateTray(status: StatusSnapshot): void {
       },
       { type: 'separator' },
       { label: '지금 새로고침', click: () => void monitor.refresh() },
+      {
+        label: youtubeLcd?.active
+          ? '유튜브 샘플 중지'
+          : '유튜브 샘플 LCD 테스트',
+        click: () => {
+          if (youtubeLcd?.active) stopYoutubeLcdSample();
+          else startYoutubeLcdSample();
+        },
+      },
       { label: '키보드 설정…', click: () => openKeyboardSettingsWindow() },
       { label: '설정…', click: () => openSettingsWindow() },
       { type: 'separator' },
@@ -278,6 +299,7 @@ function openKeyboardSettingsWindow(): void {
 }
 
 function renderAndSend(track: TrackInfo): void {
+  if (youtubeLcd?.active) return;
   const sequence = ++renderSequence;
   pendingRender = {
     sequence,
@@ -299,6 +321,41 @@ function showVolumeFeedback(adjustment: FineVolumeAdjustment): void {
     activeVolumeFeedback = null;
     renderAndSend(currentTrack);
   }, VOLUME_FEEDBACK_DURATION_MS);
+}
+
+function youtubeSampleVideoId(): string {
+  return (
+    parseYouTubeVideoId(process.env.XPAD_YOUTUBE_ID ?? SAMPLE_YOUTUBE_VIDEO_ID) ??
+    SAMPLE_YOUTUBE_VIDEO_ID
+  );
+}
+
+function startYoutubeLcdSample(rawId = youtubeSampleVideoId()): void {
+  const videoId = parseYouTubeVideoId(rawId);
+  if (!videoId) {
+    console.error('[youtube-lcd] invalid video id', rawId);
+    return;
+  }
+  if (!youtubeLcd) youtubeLcd = new YouTubeLcdPlayer();
+  youtubeLcd.start({
+    videoId,
+    onFrame: (frame) => {
+      if (!hidDisabled && deviceHost?.protocolReady) deviceHost.setFrame(frame);
+    },
+    onStopped: () => {
+      broadcastStatus();
+      renderAndSend(currentTrack);
+    },
+  });
+  broadcastStatus();
+}
+
+function stopYoutubeLcdSample(silent = false): void {
+  youtubeLcd?.stop({ silent });
+  if (!silent) {
+    broadcastStatus();
+    renderAndSend(currentTrack);
+  }
 }
 
 function disposeVolumeFeedback(): void {
@@ -735,6 +792,7 @@ if (!gotLock) {
     renderAndSend(currentTrack);
     monitor.start();
     openPlayerWindow();
+    if (youtubeTestRequested) startYoutubeLcdSample();
   });
 
   app.on('activate', () => openPlayerWindow());
@@ -746,6 +804,7 @@ if (!gotLock) {
     shuttingDown = true;
     event.preventDefault();
     monitor?.stop();
+    stopYoutubeLcdSample(true);
     let finished = false;
     const finish = () => {
       if (finished) return;

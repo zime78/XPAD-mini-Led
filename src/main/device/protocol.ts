@@ -80,6 +80,10 @@ export class XpadProtocol {
   private framesUntilFull = 0;
   private lastLcdWrite = 0;
   private lastError = 0;
+  private fpsWindowStarted = Date.now();
+  private fpsDraws = 0;
+  private fpsChunks = 0;
+  private fpsMs = 0;
   onReady: (() => void) | null = null;
 
   constructor(private device: XpadDevice) {
@@ -651,6 +655,7 @@ export class XpadProtocol {
     const force = this.lastFrame === null || this.framesUntilFull <= 0;
     this.framesUntilFull = force ? 300 : this.framesUntilFull - 1;
     let sent = 0;
+    const drawStarted = Date.now();
 
     for (let offset = 0; offset < rgb565.length; offset += chunkSize) {
       const length = Math.min(chunkSize, rgb565.length - offset);
@@ -685,6 +690,29 @@ export class XpadProtocol {
     }
     if (sent > 0) this.lastLcdWrite = Date.now();
     this.lastFrame = Buffer.from(rgb565);
+    this.recordLcdFps(Date.now() - drawStarted, sent);
+  }
+
+  private recordLcdFps(drawMs: number, chunks: number): void {
+    if (process.env.XPAD_LCD_FPS_LOG !== '1' && process.env.XPAD_YOUTUBE_TEST !== '1') {
+      return;
+    }
+    this.fpsDraws += 1;
+    this.fpsChunks += chunks;
+    this.fpsMs += drawMs;
+    const elapsedMs = Date.now() - this.fpsWindowStarted;
+    if (elapsedMs < 2000) return;
+    const seconds = elapsedMs / 1000;
+    const draws = this.fpsDraws;
+    console.log(
+      `[lcd-fps] window=${seconds.toFixed(1)}s hidFps=${(draws / seconds).toFixed(1)} ` +
+        `drawMsAvg=${(this.fpsMs / Math.max(1, draws)).toFixed(0)} ` +
+        `chunksAvg=${(this.fpsChunks / Math.max(1, draws)).toFixed(1)}`
+    );
+    this.fpsWindowStarted = Date.now();
+    this.fpsDraws = 0;
+    this.fpsChunks = 0;
+    this.fpsMs = 0;
   }
 
   private buildPacket(command: number, payload: Buffer, index = 0): Buffer {

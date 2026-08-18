@@ -59,6 +59,7 @@ XPAD Mini Now Playing 빌드·디버깅·배포 도구
   debug [main] [renderer] HID 없이 main/renderer 디버그 포트 실행
   debug-hid [main] [renderer]
                           실기기 HID를 사용해 디버그 포트 실행
+  youtube-test [videoId]  유튜브 공식 임베드를 LCD로 샘플 전송(HID 사용)
   build                   out/ 프로덕션 번들 생성
   package [대상]          개인 Developer ID로 DMG 생성·서명·검증
   verify [대상]           기존 DMG와 내부 앱 서명 검증
@@ -81,10 +82,12 @@ XPAD Mini Now Playing 빌드·디버깅·배포 도구
                           미지정 시 Keychain의 Developer ID Application 자동 선택
   XPAD_INSPECT_PORT       main process inspector 포트(기본 9229)
   XPAD_RENDERER_DEBUG_PORT renderer remote debugging 포트(기본 9222)
+  XPAD_YOUTUBE_TEST=1     시작 시 유튜브 샘플 LCD 창을 연다
+  XPAD_YOUTUBE_ID         샘플 video id 또는 watch URL(기본 vCFfPqLVp0U)
 
 예시:
   ./build.sh debug
-  ./build.sh stop && ./build.sh debug-hid
+  ./build.sh stop && ./build.sh youtube-test
   ./build.sh check
   ./build.sh package all
   ./build.sh deploy host
@@ -339,6 +342,12 @@ case "${command_name}" in
     ;;
   debug-hid)
     run_debug enabled "${1:-${MAIN_INSPECT_PORT}}" "${2:-${RENDERER_DEBUG_PORT}}"
+    ;;
+  youtube-test)
+    assert_node_dependencies
+    assert_installed_app_not_running
+    log "유튜브 LCD 샘플: ${1:-vCFfPqLVp0U} (설치 앱이 꺼져 있어야 함)"
+    XPAD_YOUTUBE_TEST=1 XPAD_LCD_FPS_LOG=1 XPAD_YOUTUBE_ID="${1:-vCFfPqLVp0U}" exec npm run dev
     ;;
   build)
     assert_node_dependencies
