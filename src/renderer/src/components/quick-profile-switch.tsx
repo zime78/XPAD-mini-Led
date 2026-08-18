@@ -1,6 +1,7 @@
 import {
   KEYBOARD_SLOTS,
   PROFILE_IDS,
+  YOUTUBE_PROFILE_ID,
   type KeyboardSlot,
   type ProfileId,
   type StatusSnapshot,
@@ -27,13 +28,17 @@ export function QuickProfileSwitch({ status, onSelect }: QuickProfileSwitchProps
     <section className="quick-profile" aria-label="빠른 프로파일 전환">
       <div className="quick-profile-buttons" role="group" aria-label="프로파일 선택">
         {PROFILE_IDS.map((profileId) => {
-          const active = profileId === state.activeProfileId;
+          const youtube = profileId === YOUTUBE_PROFILE_ID;
+          const active = youtube
+            ? status.youtubeLcdActive || profileId === state.activeProfileId
+            : profileId === state.activeProfileId && !status.youtubeLcdActive;
           return (
             <button
               key={profileId}
               type="button"
-              className={active ? 'active' : ''}
+              className={[active ? 'active' : '', youtube ? 'youtube' : ''].filter(Boolean).join(' ')}
               aria-label={`Profile ${profileId}`}
+              title={youtube ? 'YouTube LCD (P5 고정)' : `Profile ${profileId}`}
               aria-pressed={active}
               disabled={disabled}
               onClick={() => onSelect(profileId)}

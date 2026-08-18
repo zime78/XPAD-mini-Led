@@ -88,7 +88,15 @@ class IntervalMeter {
 export interface YouTubeLcdStartOptions {
   videoId: string;
   onFrame: (rgb565: Buffer) => void;
+  onPreview?: (dataUrl: string) => void;
   onStopped?: () => void;
+}
+
+/** RGBA를 LCD 미리보기 PNG data URL로 만든다. */
+export function rgbaToPngDataUrl(rgba: Buffer, width: number, height: number): string {
+  const png = new PNG({ width, height });
+  rgba.copy(png.data, 0, 0, Math.min(png.data.length, rgba.length));
+  return `data:image/png;base64,${PNG.sync.write(png).toString('base64')}`;
 }
 
 /**
@@ -519,15 +527,16 @@ export class YouTubeLcdPlayer {
     this.onStopped = options.onStopped ?? null;
 
     const window = new BrowserWindow({
-      title: 'XPAD YouTube LCD 테스트',
+      title: 'XPAD YouTube LCD',
       width: VIEW_WIDTH,
       height: VIEW_HEIGHT,
       useContentSize: true,
-      resizable: true,
-      minimizable: true,
+      show: false,
+      skipTaskbar: true,
+      resizable: false,
+      minimizable: false,
       maximizable: false,
       fullscreenable: false,
-      alwaysOnTop: true,
       backgroundColor: '#000000',
       autoHideMenuBar: true,
       webPreferences: {
@@ -587,7 +596,7 @@ export class YouTubeLcdPlayer {
       prepare();
       if (!this.timer) {
         this.timer = setInterval(() => {
-          void this.capture(window, options.onFrame);
+          void this.capture(window, options.onFrame, options.onPreview);
         }, CAPTURE_INTERVAL_MS);
       }
     });
@@ -639,7 +648,8 @@ export class YouTubeLcdPlayer {
 
   private async capture(
     window: BrowserWindow,
-    onFrame: (rgb565: Buffer) => void
+    onFrame: (rgb565: Buffer) => void,
+    onPreview?: (dataUrl: string) => void
   ): Promise<void> {
     if (this.capturing || window.isDestroyed()) {
       this.meter.drop();
@@ -656,6 +666,7 @@ export class YouTubeLcdPlayer {
       const pullMs = Date.now() - started;
       const encodeStarted = Date.now();
       onFrame(encodeRgbaToRgb565(pulled.rgba, pulled.width, pulled.height));
+      onPreview?.(rgbaToPngDataUrl(pulled.rgba, pulled.width, pulled.height));
       this.meter.ok('video', pullMs, Date.now() - encodeStarted);
     } catch (error) {
       console.error('[youtube-lcd] capture failed', error);

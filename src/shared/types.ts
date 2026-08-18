@@ -10,6 +10,8 @@ export type PlayerViewMode = 'expanded' | 'mini';
 
 export const PROFILE_IDS = [1, 2, 3, 4, 5] as const;
 export type ProfileId = (typeof PROFILE_IDS)[number];
+/** 플레이어 P5는 유튜브 LCD 고정 슬롯. P1~P4 전환 동작은 그대로다. */
+export const YOUTUBE_PROFILE_ID = 5 satisfies ProfileId;
 export const EDITABLE_PROFILE_IDS = [2, 3, 4, 5] as const satisfies readonly ProfileId[];
 export type EditableProfileId = (typeof EDITABLE_PROFILE_IDS)[number];
 
@@ -228,6 +230,7 @@ export interface StatusSnapshot {
   track: TrackInfo;
   monitorError: string | null;
   previewDataUrl: string | null;
+  youtubeLcdActive: boolean;
   knobFineVolumeState: KnobFineVolumeState;
   knobFineVolumeError: string | null;
   keyboardProfileState: KeyboardProfileState;

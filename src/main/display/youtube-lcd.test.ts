@@ -7,6 +7,7 @@ import {
   encodeCapturedPng,
   encodeRgbaToRgb565,
   formatFpsLine,
+  rgbaToPngDataUrl,
   lcdCaptureRect,
   parseYouTubeVideoId,
   SAMPLE_YOUTUBE_VIDEO_ID,
@@ -123,6 +124,18 @@ describe('encodeRgbaToRgb565', () => {
     const frame = encodeRgbaToRgb565(rgba, 2, 1);
     expect(frame.length).toBe(240 * 135 * 2);
     expect(frame.readUInt16LE(0)).toBe(0x07e0);
+  });
+});
+
+describe('rgbaToPngDataUrl', () => {
+  it('writes a PNG data URL from RGBA', () => {
+    const rgba = Buffer.alloc(4, 0);
+    rgba.set([255, 0, 0, 255]);
+    const url = rgbaToPngDataUrl(rgba, 1, 1);
+    expect(url.startsWith('data:image/png;base64,')).toBe(true);
+    const png = PNG.sync.read(Buffer.from(url.slice('data:image/png;base64,'.length), 'base64'));
+    expect(png.width).toBe(1);
+    expect(png.data[0]).toBe(255);
   });
 });
 

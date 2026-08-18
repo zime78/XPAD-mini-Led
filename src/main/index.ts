@@ -31,10 +31,12 @@ import {
   ProfileId,
   StatusSnapshot,
   TrackInfo,
+  YOUTUBE_PROFILE_ID,
 } from '../shared/types';
 import { loadConfig, saveConfig } from './config';
 import { DiagnosticLog } from './diagnostic-log';
 import { DeviceHost } from './device/device-host';
+import { resolveDisplayTrack } from './display/display-state';
 import { renderTrackFrame } from './display/frame-renderer';
 import type { VolumeFeedback } from './display/volume-overlay';
 import {
@@ -127,6 +129,7 @@ function currentStatus(): StatusSnapshot {
     track: currentTrack,
     monitorError: monitor?.lastError ?? null,
     previewDataUrl,
+    youtubeLcdActive: Boolean(youtubeLcd?.active),
     knobFineVolumeState: fineVolumeError
       ? 'error'
       : (deviceHost?.knobFineVolumeState ?? 'disabled'),
@@ -312,6 +315,28 @@ function renderAndSend(track: TrackInfo): void {
   if (!rendering) void drainRenderQueue();
 }
 
+/** 상태가 바뀌면 다시 그린다. 유튜브가 LCD를 쓰는 중이면 음악 프레임은 올리지 않는다. */
+function refreshDisplay(reason: string): void {
+  const mode = youtubeLcd?.active ? 'youtube' : 'music';
+  diagnosticLog?.log('display-refresh', {
+    reason,
+    mode,
+    profile: deviceHost?.activeProfileId ?? config.keyboardSettings.activeProfileId,
+    youtubeActive: Boolean(youtubeLcd?.active),
+    track: currentTrack.title,
+    service: currentTrack.service,
+    state: currentTrack.state,
+  });
+  console.log(
+    `[display] refresh reason=${reason} mode=${mode} profile=${deviceHost?.activeProfileId ?? config.keyboardSettings.activeProfileId} track=${currentTrack.title}`
+  );
+  if (youtubeLcd?.active) {
+    broadcastStatus();
+    return;
+  }
+  renderAndSend(resolveDisplayTrack(currentTrack));
+}
+
 function showVolumeFeedback(adjustment: FineVolumeAdjustment): void {
   activeVolumeFeedback = { volume: adjustment.volume };
   if (volumeFeedbackTimer) clearTimeout(volumeFeedbackTimer);
@@ -340,11 +365,16 @@ function startYoutubeLcdSample(rawId = youtubeSampleVideoId()): void {
   youtubeLcd.start({
     videoId,
     onFrame: (frame) => {
+      if (!youtubeLcd?.active) return;
       if (!hidDisabled && deviceHost?.protocolReady) deviceHost.setFrame(frame);
     },
+    onPreview: (dataUrl) => {
+      if (!youtubeLcd?.active) return;
+      previewDataUrl = dataUrl;
+      playerWindow?.webContents.send('status-changed', currentStatus());
+    },
     onStopped: () => {
-      broadcastStatus();
-      renderAndSend(currentTrack);
+      refreshDisplay('youtube-stopped');
     },
   });
   broadcastStatus();
@@ -352,10 +382,10 @@ function startYoutubeLcdSample(rawId = youtubeSampleVideoId()): void {
 
 function stopYoutubeLcdSample(silent = false): void {
   youtubeLcd?.stop({ silent });
-  if (!silent) {
-    broadcastStatus();
-    renderAndSend(currentTrack);
-  }
+  if (silent) return;
+  previewDataUrl = null;
+  broadcastStatus();
+  refreshDisplay('youtube-stop');
 }
 
 function disposeVolumeFeedback(): void {
@@ -422,8 +452,7 @@ function applyConfig(next: AppConfig): AppConfig {
     );
   }
   configureLoginItem();
-  renderAndSend(currentTrack);
-  broadcastStatus();
+  refreshDisplay('config');
   return config;
 }
 
@@ -496,6 +525,18 @@ async function switchKeyboardProfile(profileId: ProfileId): Promise<StatusSnapsh
     requireDeviceSettingsReady();
     const selectedProfileId = await deviceHost.selectKeyboardProfile(profileId);
     syncKeyboardActiveProfile(selectedProfileId);
+    diagnosticLog?.log('profile-switch', {
+      to: selectedProfileId,
+      youtube: selectedProfileId === YOUTUBE_PROFILE_ID,
+      track: currentTrack.title,
+    });
+    console.log(`[display] profile-switch to=${selectedProfileId} youtube=${selectedProfileId === YOUTUBE_PROFILE_ID}`);
+    if (selectedProfileId === YOUTUBE_PROFILE_ID) {
+      startYoutubeLcdSample();
+    } else {
+      stopYoutubeLcdSample(false);
+      void monitor.refresh();
+    }
   } catch (error) {
     profileSwitchError = error instanceof Error ? error.message : String(error);
   } finally {
@@ -747,6 +788,7 @@ if (!gotLock) {
       app.getPath('temp')
     );
 
+    let lastDeviceReady = false;
     deviceHost.on('status', () => {
       diagnosticLog.log('device-status', {
         connected: deviceHost.connected,
@@ -755,6 +797,13 @@ if (!gotLock) {
       });
       if (deviceHost.activeProfileId) {
         syncKeyboardActiveProfile(deviceHost.activeProfileId);
+      }
+      const ready = Boolean(deviceHost.connected && deviceHost.protocolReady);
+      if (ready !== lastDeviceReady) {
+        lastDeviceReady = ready;
+        if (ready) refreshDisplay('device-ready');
+        else broadcastStatus();
+        return;
       }
       broadcastStatus();
     });
@@ -765,7 +814,7 @@ if (!gotLock) {
     keyActionRouter.on('status', broadcastKeyboardStatus);
     monitor.on('change', (track: TrackInfo) => {
       currentTrack = track;
-      renderAndSend(track);
+      refreshDisplay('track-change');
     });
     monitor.on('status', broadcastStatus);
 

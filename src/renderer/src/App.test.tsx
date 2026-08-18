@@ -57,6 +57,7 @@ const status: StatusSnapshot = {
   },
   monitorError: null,
   previewDataUrl: null,
+  youtubeLcdActive: false,
   knobFineVolumeState: 'active',
   knobFineVolumeError: null,
   keyboardProfileState: {
@@ -173,6 +174,29 @@ describe('XPAD Mini Now Playing 화면', () => {
         within(playerPanel).getByRole('button', { name: 'Profile 4' }).getAttribute('aria-pressed')
       ).toBe('true');
     });
+  });
+
+  it('P5는 유튜브 고정이고 미리보기에 영상을 보여준다', async () => {
+    window.xpad.getStatus = vi.fn().mockResolvedValue({
+      ...status,
+      youtubeLcdActive: true,
+      previewDataUrl: 'data:image/png;base64,aaa',
+      keyboardProfileState: {
+        ...status.keyboardProfileState,
+        activeProfileId: 5,
+      },
+    });
+    render(<App />);
+
+    const playerPanel = await screen.findByRole('region', { name: 'YouTube' });
+    const profile5 = within(playerPanel).getByRole('button', { name: 'Profile 5' });
+    expect(profile5.className).toContain('youtube');
+    expect(profile5.getAttribute('aria-pressed')).toBe('true');
+    expect(within(playerPanel).getByAltText('YouTube LCD 미리보기')).toBeTruthy();
+    expect(within(playerPanel).getByRole('heading', { name: 'YouTube' })).toBeTruthy();
+
+    fireEvent.click(within(playerPanel).getByRole('button', { name: 'Profile 3' }));
+    await waitFor(() => expect(window.xpad.switchKeyboardProfile).toHaveBeenCalledWith(3));
   });
 
   it('장치가 준비되지 않았거나 전환 중이면 프로파일 선택을 차단한다', async () => {

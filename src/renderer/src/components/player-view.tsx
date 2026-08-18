@@ -116,20 +116,36 @@ export function PlayerView({
       </div>
       {mini && actionError && <p className="mini-player-action-error" role="alert">{actionError}</p>}
       <div className={`player-content ${mini ? 'mini-player-content' : ''}`}>
-        <div className="lcd-shell">
+        <div className={`lcd-shell ${status.youtubeLcdActive ? 'youtube' : ''}`}>
           {status.previewDataUrl ? (
-            <img src={status.previewDataUrl} alt="XPAD LCD 미리보기" />
+            <img
+              src={status.previewDataUrl}
+              alt={status.youtubeLcdActive ? 'YouTube LCD 미리보기' : 'XPAD LCD 미리보기'}
+            />
           ) : (
-            <div className="preview-empty">LCD 미리보기 준비 중</div>
+            <div className="preview-empty">
+              {status.youtubeLcdActive ? 'YouTube 준비 중' : 'LCD 미리보기 준비 중'}
+            </div>
           )}
         </div>
         {!mini && (
           <div className="track-info">
-            <span className={`badge ${track.service}`}>{SERVICE_NAMES[track.service]}</span>
-            <h2 id="current-track-title">{track.title}</h2>
-            <p>{track.artist}</p>
-            {track.album && <small>{track.album}</small>}
-            <div className="playback-state">{PLAYBACK_STATE_NAMES[track.state]}</div>
+            {status.youtubeLcdActive ? (
+              <>
+                <span className="badge youtube">YouTube</span>
+                <h2 id="current-track-title">YouTube</h2>
+                <p>P5 고정 영상</p>
+                <div className="playback-state">재생 중</div>
+              </>
+            ) : (
+              <>
+                <span className={`badge ${track.service}`}>{SERVICE_NAMES[track.service]}</span>
+                <h2 id="current-track-title">{track.title}</h2>
+                <p>{track.artist}</p>
+                {track.album && <small>{track.album}</small>}
+                <div className="playback-state">{PLAYBACK_STATE_NAMES[track.state]}</div>
+              </>
+            )}
           </div>
         )}
       </div>
