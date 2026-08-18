@@ -44,7 +44,14 @@ import { DiagnosticLog } from './diagnostic-log';
 import { DeviceHost } from './device/device-host';
 import { resolveDisplayTrack } from './display/display-state';
 import { renderTrackFrame } from './display/frame-renderer';
-import type { VolumeFeedback } from './display/volume-overlay';
+import {
+  blendRgbaOverPngDataUrl,
+  blendRgbaOverRgb565,
+  normalizeVolume,
+  renderVolumeOverlayRgba,
+  YOUTUBE_VOLUME_ACCENT,
+  type VolumeFeedback,
+} from './display/volume-overlay';
 import {
   addYoutubeVideo,
   currentYoutubeItem,
@@ -59,6 +66,7 @@ import {
 import { fetchYoutubeOembed } from './display/youtube-oembed';
 import {
   clearYoutubeSession,
+  confirmYoutubeAccountState,
   parseYouTubeVideoId,
   readYoutubeAccountState,
   YouTubeLcdPlayer,
@@ -100,6 +108,8 @@ let pendingRender: {
 } | null = null;
 let rendering = false;
 let activeVolumeFeedback: VolumeFeedback | null = null;
+let youtubeVolumeOverlay: Buffer | null = null;
+let youtubeVolumeOverlaySeq = 0;
 let volumeFeedbackTimer: ReturnType<typeof setTimeout> | null = null;
 let profileSwitching = false;
 let profileSwitchError: string | null = null;
@@ -157,6 +167,9 @@ function currentStatus(): StatusSnapshot {
       ? 'error'
       : (deviceHost?.knobFineVolumeState ?? 'disabled'),
     knobFineVolumeError: fineVolumeError ?? deviceHost?.knobFineVolumeError ?? null,
+    volumePercent: activeVolumeFeedback
+      ? normalizeVolume(activeVolumeFeedback.volume)
+      : null,
     keyboardProfileState: {
       activeProfileId:
         deviceHost?.activeProfileId ?? deviceKeyboardSettings.activeProfileId,
@@ -364,11 +377,34 @@ function showVolumeFeedback(adjustment: FineVolumeAdjustment): void {
   activeVolumeFeedback = { volume: adjustment.volume };
   if (volumeFeedbackTimer) clearTimeout(volumeFeedbackTimer);
   renderAndSend(currentTrack);
+  broadcastStatus();
+  if (youtubeLcd?.active) void refreshYoutubeVolumeOverlay();
   volumeFeedbackTimer = setTimeout(() => {
     volumeFeedbackTimer = null;
     activeVolumeFeedback = null;
+    youtubeVolumeOverlay = null;
+    youtubeVolumeOverlaySeq += 1;
     renderAndSend(currentTrack);
+    broadcastStatus();
   }, VOLUME_FEEDBACK_DURATION_MS);
+}
+
+async function refreshYoutubeVolumeOverlay(): Promise<void> {
+  const seq = ++youtubeVolumeOverlaySeq;
+  if (!activeVolumeFeedback) {
+    youtubeVolumeOverlay = null;
+    return;
+  }
+  try {
+    const overlay = await renderVolumeOverlayRgba(
+      activeVolumeFeedback.volume,
+      YOUTUBE_VOLUME_ACCENT
+    );
+    if (seq !== youtubeVolumeOverlaySeq) return;
+    youtubeVolumeOverlay = overlay;
+  } catch (error) {
+    console.error('[display] youtube volume overlay failed', error);
+  }
 }
 
 function youtubeVideoIdToPlay(): string | null {
@@ -429,11 +465,16 @@ function startYoutubeLcdSample(rawId = youtubeVideoIdToPlay()): void {
     videoId,
     onFrame: (frame) => {
       if (!youtubeLcd?.active) return;
-      if (!hidDisabled && deviceHost?.protocolReady) deviceHost.setFrame(frame);
+      const painted = youtubeVolumeOverlay
+        ? blendRgbaOverRgb565(frame, youtubeVolumeOverlay)
+        : frame;
+      if (!hidDisabled && deviceHost?.protocolReady) deviceHost.setFrame(painted);
     },
     onPreview: (dataUrl) => {
       if (!youtubeLcd?.active) return;
-      previewDataUrl = dataUrl;
+      previewDataUrl = youtubeVolumeOverlay
+        ? blendRgbaOverPngDataUrl(dataUrl, youtubeVolumeOverlay)
+        : dataUrl;
       playerWindow?.webContents.send('status-changed', currentStatus());
     },
     onInfo: (info) => {
@@ -520,6 +561,8 @@ async function addYoutubeFromInput(raw: string): Promise<YoutubeCommandResult> {
   );
   if (wasEmpty && (deviceHost?.activeProfileId ?? config.keyboardSettings.activeProfileId) === YOUTUBE_PROFILE_ID) {
     startYoutubeIfNeeded();
+  } else if (youtubePlayback) {
+    youtubePlayback = withYoutubeQueue(youtubePlayback, config.youtubeLibrary);
   }
   return youtubeCommandResult();
 }
@@ -550,6 +593,12 @@ async function signOutYoutube(): Promise<YoutubeCommandResult> {
   youtubeAccount = { ...EMPTY_YOUTUBE_ACCOUNT };
   if (youtubeLcd?.active) startYoutubeIfNeeded();
   else broadcastStatus();
+  return youtubeCommandResult();
+}
+
+async function refreshYoutubeAccount(): Promise<YoutubeCommandResult> {
+  youtubeAccount = await confirmYoutubeAccountState();
+  broadcastStatus();
   return youtubeCommandResult();
 }
 
@@ -928,6 +977,10 @@ function registerIpc(): void {
     requireSettingsOrPlayer(event);
     return signInYoutube();
   });
+  ipcMain.handle('youtube-account-refresh', async (event) => {
+    requireSettingsOrPlayer(event);
+    return refreshYoutubeAccount();
+  });
   ipcMain.handle('youtube-sign-out', async (event) => {
     requireSettingsOrPlayer(event);
     return signOutYoutube();
@@ -1095,7 +1148,7 @@ if (!gotLock) {
     monitor.start();
     openPlayerWindow();
     if (youtubeTestRequested) startYoutubeIfNeeded();
-    void readYoutubeAccountState()
+    void confirmYoutubeAccountState()
       .then((account) => {
         youtubeAccount = account;
         broadcastStatus();

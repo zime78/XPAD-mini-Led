@@ -13,8 +13,23 @@ import { encodeRgb565 } from './frame-pipeline';
 /** 사용자가 준 샘플: 이예준 피크닉버스킹 녹화. Mix/라디오 ID는 쓰지 않는다. */
 export const SAMPLE_YOUTUBE_VIDEO_ID = DEFAULT_YOUTUBE_VIDEO_ID;
 export const YOUTUBE_SESSION_PARTITION = 'persist:youtube-lcd';
-const YOUTUBE_USER_AGENT =
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+const YOUTUBE_LOGIN_COOKIE_NAMES = [
+  'SAPISID',
+  'LOGIN_INFO',
+  '__Secure-1PSID',
+  '__Secure-3PSID',
+] as const;
+
+/** Electron 고유 표식만 빼고, 실제 Chromium 버전은 유지한다. 가짜 Chrome 131을 쓰지 않는다. */
+export function youtubeSessionUserAgent(raw: string): string {
+  return raw.replace(/\sElectron\/[\w.+-]+/g, '').replace(/\sXPAD[^\s]*/g, '').trim();
+}
+
+export function youtubeLoginCookiesPresent(names: readonly string[]): boolean {
+  return names.some((name) =>
+    YOUTUBE_LOGIN_COOKIE_NAMES.includes(name as (typeof YOUTUBE_LOGIN_COOKIE_NAMES)[number])
+  );
+}
 
 const VIDEO_ID_PATTERN = /^[A-Za-z0-9_-]{11}$/;
 const VIEW_WIDTH = LCD_WIDTH;
@@ -659,17 +674,67 @@ function loadVideoScript(videoId: string): string {
 `;
 }
 
-export async function readYoutubeAccountState(): Promise<YoutubeAccountState> {
-  const cookies = await session.fromPartition(YOUTUBE_SESSION_PARTITION).cookies.get({
-    domain: '.youtube.com',
+function youtubeSession() {
+  return session.fromPartition(YOUTUBE_SESSION_PARTITION);
+}
+
+export function applyYoutubeSessionUserAgent(): string {
+  const ses = youtubeSession();
+  const agent = youtubeSessionUserAgent(ses.getUserAgent());
+  ses.setUserAgent(agent);
+  return agent;
+}
+
+export function hardenYoutubeSession(): void {
+  const ses = youtubeSession();
+  applyYoutubeSessionUserAgent();
+  ses.setPermissionRequestHandler((_webContents, _permission, callback) => {
+    callback(false);
   });
-  const signedIn = cookies.some((cookie) =>
-    ['SAPISID', 'LOGIN_INFO', '__Secure-1PSID', '__Secure-3PSID'].includes(cookie.name)
-  );
+}
+
+export async function readYoutubeAccountState(): Promise<YoutubeAccountState> {
+  const cookies = await youtubeSession().cookies.get({ domain: '.youtube.com' });
+  const signedIn = youtubeLoginCookiesPresent(cookies.map((cookie) => cookie.name));
   return {
     signedIn,
-    label: signedIn ? '연결됨' : EMPTY_YOUTUBE_ACCOUNT.label,
+    label: signedIn ? '연결됨 (이 앱 세션)' : EMPTY_YOUTUBE_ACCOUNT.label,
   };
+}
+
+/** 쿠키만 보지 않고 youtube.com이 로그인 상태로 열리는지 확인한다. */
+export async function confirmYoutubeAccountState(): Promise<YoutubeAccountState> {
+  const cookieState = await readYoutubeAccountState();
+  if (!cookieState.signedIn) return cookieState;
+  hardenYoutubeSession();
+  const probe = new BrowserWindow({
+    show: false,
+    width: 800,
+    height: 600,
+    webPreferences: {
+      partition: YOUTUBE_SESSION_PARTITION,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
+    },
+  });
+  try {
+    probe.webContents.setUserAgent(applyYoutubeSessionUserAgent());
+    await probe.loadURL('https://www.youtube.com/', {
+      extraHeaders: 'Referer: https://www.youtube.com/\r\n',
+    });
+    const url = probe.webContents.getURL();
+    const onAccounts = url.includes('accounts.google.com');
+    if (onAccounts) {
+      return { signedIn: false, label: EMPTY_YOUTUBE_ACCOUNT.label };
+    }
+    return { signedIn: true, label: '연결됨 (YouTube에서 확인)' };
+  } catch {
+    return cookieState;
+  } finally {
+    if (!probe.isDestroyed()) probe.destroy();
+  }
 }
 
 export async function clearYoutubeSession(): Promise<void> {
@@ -732,13 +797,14 @@ export class YouTubeLcdPlayer {
       },
     });
     this.window = window;
+    hardenYoutubeSession();
+    window.webContents.setUserAgent(applyYoutubeSessionUserAgent());
     window.webContents.setBackgroundThrottling(false);
     console.log(
       `[youtube-lcd] start video=${options.videoId} url=${watchUrl(options.videoId)} source=video-element encode=main-rgb565 hwdecode=on pace=device captureIntervalMs=${CAPTURE_INTERVAL_MS} lcd=${LCD_WIDTH}x${LCD_HEIGHT}`
     );
     window.setMenuBarVisibility(false);
     window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-    window.webContents.setUserAgent(YOUTUBE_USER_AGENT);
 
     window.on('closed', () => {
       this.clearTimer();
@@ -831,6 +897,7 @@ export class YouTubeLcdPlayer {
     } catch {
       // 로그인 창을 여는 것이 우선이다.
     }
+    hardenYoutubeSession();
     const login = new BrowserWindow({
       title: 'YouTube 계정 연결',
       width: 960,
@@ -839,14 +906,41 @@ export class YouTubeLcdPlayer {
       webPreferences: {
         contextIsolation: true,
         nodeIntegration: false,
-        sandbox: false,
+        sandbox: true,
         webSecurity: true,
         partition: YOUTUBE_SESSION_PARTITION,
       },
     });
     this.signInWindow = login;
-    login.webContents.setUserAgent(YOUTUBE_USER_AGENT);
-    login.webContents.setWindowOpenHandler(() => ({ action: 'allow' }));
+    login.webContents.setUserAgent(applyYoutubeSessionUserAgent());
+    login.webContents.setWindowOpenHandler(({ url }) => {
+      try {
+        const host = new URL(url).hostname;
+        const allowed =
+          host === 'youtube.com' ||
+          host.endsWith('.youtube.com') ||
+          host === 'google.com' ||
+          host.endsWith('.google.com') ||
+          host.endsWith('.google.co.kr') ||
+          host.endsWith('.gstatic.com') ||
+          host.endsWith('.googleusercontent.com');
+        if (!allowed) return { action: 'deny' as const };
+        return {
+          action: 'allow' as const,
+          overrideBrowserWindowOptions: {
+            webPreferences: {
+              partition: YOUTUBE_SESSION_PARTITION,
+              contextIsolation: true,
+              nodeIntegration: false,
+              sandbox: true,
+              webSecurity: true,
+            },
+          },
+        };
+      } catch {
+        return { action: 'deny' as const };
+      }
+    });
     await login.loadURL(
       'https://accounts.google.com/ServiceLogin?service=youtube&continue=https://www.youtube.com/'
     );
@@ -854,7 +948,7 @@ export class YouTubeLcdPlayer {
       login.once('closed', () => resolve());
     });
     this.signInWindow = null;
-    return readYoutubeAccountState();
+    return confirmYoutubeAccountState();
   }
 
   stop(options: { silent?: boolean } = {}): void {

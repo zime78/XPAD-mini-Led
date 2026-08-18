@@ -65,6 +65,7 @@ const status: StatusSnapshot = {
   youtubeAccount: EMPTY_YOUTUBE_ACCOUNT,
   knobFineVolumeState: 'active',
   knobFineVolumeError: null,
+  volumePercent: null,
   keyboardProfileState: {
     activeProfileId: 3,
     profiles: keyboardSettings.profiles,
@@ -135,6 +136,7 @@ describe('XPAD Mini Now Playing 화면', () => {
       controlYoutube: vi.fn().mockImplementation(async () => ({ config, status })),
       signInYoutube: vi.fn().mockImplementation(async () => ({ config, status })),
       signOutYoutube: vi.fn().mockImplementation(async () => ({ config, status })),
+      refreshYoutubeAccount: vi.fn().mockImplementation(async () => ({ config, status })),
       onStatusChanged: vi.fn().mockImplementation((callback: (next: StatusSnapshot) => void) => {
         emitStatus = callback;
         return () => undefined;
@@ -189,7 +191,7 @@ describe('XPAD Mini Now Playing 화면', () => {
   });
 
   it('P5는 유튜브 고정이고 미리보기에 영상을 보여준다', async () => {
-    window.xpad.getStatus = vi.fn().mockResolvedValue({
+    const youtubeStatus = {
       ...status,
       youtubeLcdActive: true,
       previewDataUrl: 'data:image/png;base64,aaa',
@@ -209,6 +211,17 @@ describe('XPAD Mini Now Playing 화면', () => {
         ...status.keyboardProfileState,
         activeProfileId: 5,
       },
+    };
+    window.xpad.getStatus = vi.fn().mockResolvedValue(youtubeStatus);
+    window.xpad.addYoutubeVideo = vi.fn().mockResolvedValue({
+      config,
+      status: {
+        ...youtubeStatus,
+        youtubePlayback: {
+          ...youtubeStatus.youtubePlayback,
+          queueCount: 2,
+        },
+      },
     });
     render(<App />);
 
@@ -223,6 +236,14 @@ describe('XPAD Mini Now Playing 화면', () => {
     expect(within(playerPanel).getByText('0:12 / 3:00')).toBeTruthy();
     expect(within(playerPanel).getByRole('progressbar', { name: '재생 위치' })).toBeTruthy();
     expect(within(playerPanel).getByText('재생 중')).toBeTruthy();
+    fireEvent.click(within(playerPanel).getByRole('button', { name: '목록 추가' }));
+    fireEvent.change(within(playerPanel).getByLabelText('YouTube URL 또는 ID'), {
+      target: { value: 'https://youtu.be/abcdefghijk' },
+    });
+    fireEvent.click(within(playerPanel).getByRole('button', { name: '추가' }));
+    await waitFor(() =>
+      expect(window.xpad.addYoutubeVideo).toHaveBeenCalledWith('https://youtu.be/abcdefghijk')
+    );
     fireEvent.click(
       within(playerPanel).getByRole('button', { name: '가운데 버튼 동작 실행: 재생/일시정지' })
     );
@@ -401,6 +422,16 @@ describe('XPAD Mini Now Playing 화면', () => {
     expect((await screen.findByRole('status')).textContent).toBe('설정을 저장했습니다.');
   });
 
+  it('설정 상단에 YouTube 계정 연결이 있다', async () => {
+    window.history.replaceState({}, '', '/?view=settings');
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: 'YouTube 계정' })).toBeTruthy();
+    expect(screen.getByText('로그인 안 됨')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Google 계정 연결' }));
+    await waitFor(() => expect(window.xpad.signInYoutube).toHaveBeenCalledOnce());
+  });
+
   it('설정에서 YouTube 영상을 목록에 추가한다', async () => {
     window.history.replaceState({}, '', '/?view=settings');
     window.xpad.addYoutubeVideo = vi.fn().mockResolvedValue({
@@ -423,7 +454,7 @@ describe('XPAD Mini Now Playing 화면', () => {
     });
     render(<App />);
 
-    expect(await screen.findByRole('heading', { name: 'YouTube (P5)' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'YouTube 목록' })).toBeTruthy();
     fireEvent.change(screen.getByPlaceholderText('https://www.youtube.com/watch?v=…'), {
       target: { value: 'https://youtu.be/abcdefghijk' },
     });

@@ -1,8 +1,7 @@
 import { useState } from 'react';
-import type { AppConfig, StatusSnapshot } from '../../../shared/types';
+import type { AppConfig } from '../../../shared/types';
 
 type YoutubeSettingsSectionProps = {
-  status: StatusSnapshot;
   config: AppConfig;
   busy: boolean;
   message: string;
@@ -11,12 +10,9 @@ type YoutubeSettingsSectionProps = {
   onRemove: (index: number) => Promise<void>;
   onMove: (index: number, direction: -1 | 1) => Promise<void>;
   onPlay: (index: number) => Promise<void>;
-  onSignIn: () => Promise<void>;
-  onSignOut: () => Promise<void>;
 };
 
 export function YoutubeSettingsSection({
-  status,
   config,
   busy,
   message,
@@ -25,8 +21,6 @@ export function YoutubeSettingsSection({
   onRemove,
   onMove,
   onPlay,
-  onSignIn,
-  onSignOut,
 }: YoutubeSettingsSectionProps) {
   const [draft, setDraft] = useState('');
   const library = config.youtubeLibrary;
@@ -39,26 +33,11 @@ export function YoutubeSettingsSection({
   };
 
   return (
-    <section className="settings-section youtube-settings" aria-label="YouTube P5">
-      <h2>YouTube (P5)</h2>
+    <section className="settings-section youtube-settings" aria-label="YouTube 목록">
+      <h2>YouTube 목록</h2>
       <p className="youtube-premium-note">
-        광고 없는 재생은 YouTube Premium 계정 로그인이 필요합니다. 무료 계정은 스킵 가능한
-        광고만 자동으로 누릅니다.
+        P5에서 이전/다음으로 돌릴 영상입니다. 인증은 위 YouTube 계정에서 합니다.
       </p>
-      <div className="youtube-account-row">
-        <span>
-          계정: <strong>{status.youtubeAccount.label}</strong>
-        </span>
-        {status.youtubeAccount.signedIn ? (
-          <button type="button" disabled={busy} onClick={() => void onSignOut()}>
-            로그아웃
-          </button>
-        ) : (
-          <button type="button" disabled={busy} onClick={() => void onSignIn()}>
-            Google 계정 연결
-          </button>
-        )}
-      </div>
       <label className="youtube-url-field">
         영상 URL 또는 ID
         <span>

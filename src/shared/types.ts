@@ -278,6 +278,7 @@ export interface StatusSnapshot {
   youtubeAccount: YoutubeAccountState;
   knobFineVolumeState: KnobFineVolumeState;
   knobFineVolumeError: string | null;
+  volumePercent: number | null;
   keyboardProfileState: KeyboardProfileState;
 }
 

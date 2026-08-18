@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import {
   KEYBOARD_SLOTS,
+  YOUTUBE_PROFILE_ID,
   type KeyboardSlot,
   type PlayerViewMode,
   type ProfileId,
@@ -46,6 +48,7 @@ type PlayerViewProps = {
   onToggleViewMode: () => void;
   onRunAction: (slot: KeyboardSlot) => void;
   onReconnect: () => void;
+  onAddYoutube: (input: string) => Promise<void>;
 };
 
 export function PlayerView({
@@ -60,15 +63,43 @@ export function PlayerView({
   onToggleViewMode,
   onRunAction,
   onReconnect,
+  onAddYoutube,
 }: PlayerViewProps) {
   const track = status.track;
   const mini = viewMode === 'mini';
+  const [adding, setAdding] = useState(false);
+  const [addDraft, setAddDraft] = useState('');
+  const [addBusy, setAddBusy] = useState(false);
+  const [addError, setAddError] = useState('');
+  const [addMessage, setAddMessage] = useState('');
   const youtubeTitle = youtubePlaybackTitle(status.youtubePlayback);
   const youtubeQueue = youtubePlaybackQueueLabel(status.youtubePlayback);
   const youtubeTime = youtubePlaybackTimeLabel(status.youtubePlayback);
   const youtubeProgress = youtubePlaybackProgress(status.youtubePlayback);
   const activeProfile =
     status.keyboardProfileState.profiles[status.keyboardProfileState.activeProfileId];
+  const showYoutubeAdd =
+    status.youtubeLcdActive ||
+    status.keyboardProfileState.activeProfileId === YOUTUBE_PROFILE_ID;
+
+  const submitYoutubeAdd = async () => {
+    const input = addDraft.trim();
+    if (!input || addBusy) return;
+    setAddBusy(true);
+    setAddError('');
+    setAddMessage('');
+    try {
+      await onAddYoutube(input);
+      setAddDraft('');
+      setAdding(false);
+      setAddMessage('목록에 추가했습니다.');
+      setTimeout(() => setAddMessage(''), 2000);
+    } catch (error) {
+      setAddError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setAddBusy(false);
+    }
+  };
 
   return (
     <section
@@ -153,7 +184,53 @@ export function PlayerView({
           <div className="track-info">
             {status.youtubeLcdActive ? (
               <>
-                <span className="badge youtube">YouTube</span>
+                <div className="youtube-badge-row">
+                  <span className="badge youtube">YouTube</span>
+                  {showYoutubeAdd && (
+                    <button
+                      type="button"
+                      className="youtube-add-toggle"
+                      aria-expanded={adding}
+                      onClick={() => {
+                        setAdding((open) => !open);
+                        setAddError('');
+                      }}
+                    >
+                      {adding ? '닫기' : '목록 추가'}
+                    </button>
+                  )}
+                </div>
+                {adding && (
+                  <form
+                    className="youtube-add-inline"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void submitYoutubeAdd();
+                    }}
+                  >
+                    <input
+                      value={addDraft}
+                      disabled={addBusy}
+                      autoFocus
+                      placeholder="YouTube URL 또는 ID"
+                      aria-label="YouTube URL 또는 ID"
+                      onChange={(event) => setAddDraft(event.target.value)}
+                    />
+                    <button type="submit" disabled={addBusy || !addDraft.trim()}>
+                      추가
+                    </button>
+                  </form>
+                )}
+                {addError && (
+                  <p className="youtube-add-error" role="alert">
+                    {addError}
+                  </p>
+                )}
+                {addMessage && (
+                  <p className="youtube-add-message" role="status">
+                    {addMessage}
+                  </p>
+                )}
                 <h2 id="current-track-title">{youtubeTitle}</h2>
                 <p>{youtubePlaybackChannel(status.youtubePlayback)}</p>
                 {youtubeQueue && <small>{youtubeQueue}</small>}
@@ -177,6 +254,7 @@ export function PlayerView({
                 <div className="playback-state">
                   {youtubePlaybackStateLabel(status.youtubePlayback)}
                 </div>
+                <VolumeFeedback percent={status.volumePercent} />
               </>
             ) : (
               <>
@@ -185,12 +263,25 @@ export function PlayerView({
                 <p>{track.artist}</p>
                 {track.album && <small>{track.album}</small>}
                 <div className="playback-state">{PLAYBACK_STATE_NAMES[track.state]}</div>
+                <VolumeFeedback percent={status.volumePercent} />
               </>
             )}
           </div>
         )}
       </div>
     </section>
+  );
+}
+
+function VolumeFeedback({ percent }: { percent: number | null }) {
+  if (percent === null) return null;
+  return (
+    <div className="volume-feedback" role="status" aria-label={`볼륨 ${percent}%`}>
+      <span>볼륨 {percent}%</span>
+      <div className="volume-feedback-bar" aria-hidden="true">
+        <span style={{ width: `${percent}%` }} />
+      </div>
+    </div>
   );
 }
 

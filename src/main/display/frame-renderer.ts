@@ -7,7 +7,11 @@ import {
   encodeRgb565,
 } from './frame-pipeline';
 import { fitTextBlock } from './text-layout';
-import { normalizeVolume, type VolumeFeedback } from './volume-overlay';
+import {
+  normalizeVolume,
+  volumeOverlayDrawSource,
+  type VolumeFeedback,
+} from './volume-overlay';
 
 export interface RenderedFrame {
   rgb565: Buffer;
@@ -301,66 +305,9 @@ function createCanvasRenderScript(payload: CanvasFramePayload): string {
     );
   }
 
+  ${volumeOverlayDrawSource()}
   if (payload.volume !== null) {
-    fillRoundedRect(24, 16, 192, 103, 14, 'rgba(5, 7, 10, 0.96)');
-    roundedRectPath(25, 17, 190, 101, 13);
-    context.strokeStyle = payload.accent;
-    context.lineWidth = 2;
-    context.stroke();
-
-    context.fillStyle = '#ffffff';
-    context.beginPath();
-    context.moveTo(47, 58);
-    context.lineTo(56, 58);
-    context.lineTo(67, 49);
-    context.lineTo(67, 77);
-    context.lineTo(56, 68);
-    context.lineTo(47, 68);
-    context.closePath();
-    context.fill();
-
-    context.lineCap = 'round';
-    if (payload.volume === 0) {
-      context.strokeStyle = '#fa2d48';
-      context.lineWidth = 3;
-      context.beginPath();
-      context.moveTo(67, 52);
-      context.lineTo(83, 78);
-      context.stroke();
-    } else {
-      context.strokeStyle = 'rgba(255, 255, 255, 0.9)';
-      context.lineWidth = 2.5;
-      context.beginPath();
-      context.moveTo(72, 57);
-      context.bezierCurveTo(76, 60, 76, 66, 72, 69);
-      context.moveTo(77, 52);
-      context.bezierCurveTo(85, 59, 85, 69, 77, 75);
-      context.stroke();
-    }
-
-    context.fillStyle = '#a8b7ca';
-    setFont('700', 9);
-    context.letterSpacing = '1.4px';
-    context.fillText('VOLUME', 94, 48);
-    context.letterSpacing = '0px';
-    context.textAlign = 'right';
-    context.fillStyle = '#ffffff';
-    setFont('700', 34);
-    context.fillText(String(payload.volume), 177, 82);
-    context.fillStyle = '#dbe4ee';
-    setFont('600', 15);
-    context.fillText('%', 194, 82);
-    context.textAlign = 'left';
-
-    fillRoundedRect(48, 98, 144, 7, 3.5, '#334155');
-    fillRoundedRect(
-      48,
-      98,
-      Math.round((144 * payload.volume) / 100),
-      7,
-      3.5,
-      payload.accent
-    );
+    drawVolumeOverlay(context, payload.volume, payload.accent);
   }
 
   return canvas.toDataURL('image/png');

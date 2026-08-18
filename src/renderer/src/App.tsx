@@ -106,6 +106,10 @@ export function App() {
           onToggleViewMode={() => void togglePlayerViewMode()}
           onRunAction={(slot) => void runPlayerAction(slot)}
           onReconnect={() => void reconnectDevice()}
+          onAddYoutube={async (input) => {
+            const result = await window.xpad.addYoutubeVideo(input);
+            setStatus(result.status);
+          }}
         />
       </main>
     );
@@ -159,14 +163,15 @@ export function App() {
   };
 
   const runYoutube = async (
-    work: () => ReturnType<typeof window.xpad.addYoutubeVideo>
+    work: () => ReturnType<typeof window.xpad.addYoutubeVideo>,
+    successMessage = 'YouTube 목록을 반영했습니다.'
   ) => {
     setYoutubeBusy(true);
     setYoutubeError('');
     setYoutubeMessage('');
     try {
       applyYoutubeResult(await work());
-      setYoutubeMessage('YouTube 목록을 반영했습니다.');
+      setYoutubeMessage(successMessage);
       setTimeout(() => setYoutubeMessage(''), 2500);
     } catch (error) {
       setYoutubeError(errorMessage(error));
@@ -202,8 +207,15 @@ export function App() {
           runYoutube(() => window.xpad.moveYoutubeVideo(index, direction))
         }
         onYoutubePlay={(index) => runYoutube(() => window.xpad.playYoutubeVideo(index))}
-        onYoutubeSignIn={() => runYoutube(() => window.xpad.signInYoutube())}
-        onYoutubeSignOut={() => runYoutube(() => window.xpad.signOutYoutube())}
+        onYoutubeSignIn={() =>
+          runYoutube(() => window.xpad.signInYoutube(), 'YouTube 계정 상태를 갱신했습니다.')
+        }
+        onYoutubeSignOut={() =>
+          runYoutube(() => window.xpad.signOutYoutube(), 'YouTube 계정 연결을 해제했습니다.')
+        }
+        onYoutubeRefreshAccount={() =>
+          runYoutube(() => window.xpad.refreshYoutubeAccount(), 'YouTube 계정 상태를 다시 확인했습니다.')
+        }
       />
     </main>
   );

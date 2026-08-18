@@ -5,6 +5,10 @@ vi.mock('electron', () => ({
   BrowserWindow: class {},
   session: {
     fromPartition: () => ({
+      getUserAgent: () =>
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36 Electron/43.1.1',
+      setUserAgent: () => undefined,
+      setPermissionRequestHandler: () => undefined,
       cookies: { get: async () => [] },
       clearStorageData: async () => undefined,
     }),
@@ -20,12 +24,31 @@ import {
   mapYoutubePlayerInfo,
   parseYouTubeVideoId,
   preparePlayerScript,
+  youtubeLoginCookiesPresent,
+  youtubeSessionUserAgent,
   SAMPLE_YOUTUBE_VIDEO_ID,
   unwrapPixelBytes,
   videoCoverSourceRect,
   watchUrl,
   youtubePlayerStateToPlayback,
 } from './youtube-lcd';
+
+describe('youtubeSessionUserAgent', () => {
+  it('keeps the real Chrome version and drops the Electron token', () => {
+    expect(
+      youtubeSessionUserAgent(
+        'Mozilla/5.0 Chrome/140.0.0.0 Safari/537.36 Electron/43.1.1'
+      )
+    ).toBe('Mozilla/5.0 Chrome/140.0.0.0 Safari/537.36');
+  });
+});
+
+describe('youtubeLoginCookiesPresent', () => {
+  it('requires a real YouTube login cookie name', () => {
+    expect(youtubeLoginCookiesPresent(['PREF', 'VISITOR_INFO1_LIVE'])).toBe(false);
+    expect(youtubeLoginCookiesPresent(['PREF', 'SAPISID'])).toBe(true);
+  });
+});
 
 describe('parseYouTubeVideoId', () => {
   it('accepts the sample watch URL including Mix query params', () => {

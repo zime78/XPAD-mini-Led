@@ -79,6 +79,8 @@ const api = {
     ipcRenderer.invoke('youtube-control', command),
   signInYoutube: (): Promise<YoutubeCommandResult> => ipcRenderer.invoke('youtube-sign-in'),
   signOutYoutube: (): Promise<YoutubeCommandResult> => ipcRenderer.invoke('youtube-sign-out'),
+  refreshYoutubeAccount: (): Promise<YoutubeCommandResult> =>
+    ipcRenderer.invoke('youtube-account-refresh'),
   onStatusChanged: (callback: (status: StatusSnapshot) => void): (() => void) => {
     const listener = (_event: unknown, status: StatusSnapshot) => callback(status);
     ipcRenderer.on('status-changed', listener);
