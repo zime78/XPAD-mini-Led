@@ -316,4 +316,8 @@ git에 커밋되는 핵심 파일 기준입니다. 생성물 `out/`, `dist/`, `n
 - Vendor HID bulk usage page `0xFF12`, usage `0x02`
 - LCD 240×135, RGB565 little-endian
 
+장치는 VID만으로 열지 않습니다. `0x3710`은 다른 HID(예: 일부 ATK 마우스 WebHID 매칭)에도 쓰인 사례가 있어, 이 앱은 PID `0x2507`과 vendor bulk `0xFF12`/`0x02`까지 맞을 때만 연결합니다.
+
 이 프로젝트는 MIT 라이선스의 [`SpinnerMaster/xpad-mini-claude-code`](https://github.com/SpinnerMaster/xpad-mini-claude-code)에 포함된 XPAD Mini HID 프로토콜 구현을 기반으로 합니다. 프로토콜 역분석 근거는 [`docs/PROTOCOL.md`](docs/PROTOCOL.md)에 보존되어 있습니다.
+
+2026-08-19 GitHub 공개 검색 기준, 이 장치를 이름으로 다루는 저장소는 이 프로젝트, 조상 앱, LCD 해상도 프리셋만 있는 [`xyun-stack/miniword`](https://github.com/xyun-stack/miniword)(GIF 카탈로그, HID 없음)뿐입니다. Pulsar 공식 네이티브 SDK 저장소는 찾지 못했고, 공식 키맵·펌웨어 설정은 [Bibimbap Web DRV](https://bbb.pulsar.gg/sKey/)를 사용합니다.

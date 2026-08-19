@@ -45,6 +45,11 @@ Pulsar가 공개한 네이티브 SDK/명령 사양서는 찾지 못했다. **실
 Pulsar 마케팅 자료 일부의 136행 표기와 달리 펌웨어 응답과 프레임버퍼는
 135행이었다. 직접 전송에는 135를 사용한다.
 
+VID `0x3710`만으로는 XPAD Mini가 특정되지 않는다. 2026-08-19 공개 코드 검색에서
+같은 VID가 ATK 마우스 WebHID 매칭([Nuitfanee/ClickSync](https://github.com/Nuitfanee/ClickSync))에
+쓰인 사례가 있다. 이 앱의 연결 조건은 VID + PID `0x2507` + usage page `0xFF12` /
+usage `0x02`이다.
+
 ## 3. HID 채널
 
 | Usage Page | Usage | Report ID | 크기 | 용도 |

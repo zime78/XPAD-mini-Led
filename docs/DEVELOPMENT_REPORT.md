@@ -600,6 +600,7 @@ renderer 공개 UI 동작은 Vitest와 Testing Library로 자동 검증한다. H
 - [Pulsar Lab XPAD Mini 제품 페이지](https://us.pulsar.gg/products/pulsar-lab-xpad-mini-gaming-key-pad)
 - [SayoDeviceStreamingAssistant](https://github.com/SayoGroup/SayoDeviceStreamingAssistant)
 - [원본 xpad-mini-claude-code 저장소](https://github.com/SpinnerMaster/xpad-mini-claude-code)
+- [xyun-stack/miniword](https://github.com/xyun-stack/miniword) — LCD 240×135 GIF 카탈로그(HID 없음). 2026-08-19 검색에서 XPAD Mini HID 앱은 이 저장소와 조상뿐이었고 Pulsar 공식 GitHub SDK는 없었다
 - [node-hid 공식 저장소](https://github.com/node-hid/node-hid)
 - [WebHID 사양](https://wicg.github.io/webhid/)
 - [Apple IOHIDManager 문서](https://developer.apple.com/documentation/iokit/iohidmanager_h)

@@ -77,6 +77,7 @@ TypeScript는 2칸 들여쓰기, 작은따옴표, 세미콜론을 사용하며 �
 - 앱에 번들되는 에셋은 `assets/tray`뿐이다(extraResources). `assets/clawd`는 이전 세대 잔재. `tools/import-clawd-gifs.js`가 받는 `assets/clawd-external/` 아트웍은 All-Rights-Reserved 팬아트라 gitignore 대상 — 절대 커밋·재배포 금지.
 - `re/`(gitignored)는 Pulsar Bibimbap Web DRV 역공학 산출물이고, `Manual_XPad_mini.pdf`도 재배포 금지 대상이다.
 - `docs/DEVELOPMENT_REPORT.md`가 현재 구현·검증 결과와 빌드/디버깅/배포 절차의 종합 보고서다(한국어).
+- GitHub 공개 장치 관련 레포(2026-08-19 검색): 이 저장소, 조상 `SpinnerMaster/xpad-mini-claude-code`, LCD GIF 카탈로그 `xyun-stack/miniword`(HID 없음, 240×135 프리셋만). 공식 설정은 GitHub가 아니라 Bibimbap Web DRV. VID `0x3710`만으로 열지 말 것(다른 HID와 충돌).
 
 <!-- MANUAL:END -->
 

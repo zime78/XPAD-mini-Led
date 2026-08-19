@@ -216,5 +216,8 @@ XPAD Mini LCD가 최종 출력이며, 점선으로 표시된 오른쪽 영역만
 확인할 수 있습니다. 이 프로젝트는 MIT 라이선스의
 [`SpinnerMaster/xpad-mini-claude-code`](https://github.com/SpinnerMaster/xpad-mini-claude-code)
 HID 프로토콜 구현을 기반으로 음악 표시 앱으로 확장했습니다.
+[`xyun-stack/miniword`](https://github.com/xyun-stack/miniword)는 같은 LCD 크기(240×135)의
+GIF 카탈로그이며 HID 드라이버가 아닙니다. 공식 키 설정은 GitHub가 아니라
+[Bibimbap Web DRV](https://bbb.pulsar.gg/sKey/)를 사용합니다.
 
 Pulsar Lab, Spotify, Apple과 제휴하거나 공식 승인을 받은 프로젝트가 아닙니다.

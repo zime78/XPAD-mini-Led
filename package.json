@@ -1,10 +1,14 @@
 {
   "name": "xpad-mini-now-playing",
   "version": "1.0.0",
-  "description": "Spotify and Apple Music now-playing display for the Pulsar Lab XPAD Mini LCD",
+  "description": "Pulsar Lab XPAD Mini now-playing companion for macOS — Spotify, Apple Music, and YouTube on the 240×135 LCD",
   "main": "./out/main/index.js",
   "author": "SpinnerMaster",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zime78/XPAD-mini-Led.git"
+  },
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
